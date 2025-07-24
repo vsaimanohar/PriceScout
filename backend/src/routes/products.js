@@ -27,9 +27,14 @@ router.get('/search', async (req, res) => {
     const productMap = new Map(); // To group products by name
     
     for (const platformResult of scrapingResults) {
-      console.log(`📊 Platform ${platformResult.platform}: ${platformResult.success ? 'SUCCESS' : 'FAILED'} - ${platformResult.success ? platformResult.products.length : '0'} products`);
+      const status = platformResult.success ? '✅ SUCCESS' : '❌ FAILED';
+      const count = platformResult.success ? platformResult.products.length : 0;
+      console.log(`📊 Platform ${platformResult.platform}: ${status} - ${count} products found`);
       
       if (platformResult.success && platformResult.products.length > 0) {
+        platformResult.products.forEach((product, index) => {
+          console.log(`   📦 ${platformResult.platform}: "${product.name}" - ₹${product.price}`);
+        });
         for (const scrapedProduct of platformResult.products) {
           // Create a normalized product key for better matching
           const normalizeProductName = (name) => {
