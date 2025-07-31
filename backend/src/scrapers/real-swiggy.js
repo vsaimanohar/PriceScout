@@ -25,20 +25,42 @@ class RealSwiggyScraper {
           '--no-first-run',
           '--disable-geolocation',
           '--disable-web-security',
-          '--disable-features=VizDisplayCompositor'
+          '--disable-features=VizDisplayCompositor',
+          '--disable-blink-features=AutomationControlled',
+          '--disable-features=VizDisplayCompositor',
+          '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
         ],
         timeout: 10000
       });
       
       const page = await browser.newPage();
-      await page.setViewport({ width: 1024, height: 768 });
-      await page.setUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+      await page.setViewport({ width: 1280, height: 720 });
       
-      // Override geolocation to prevent location errors
-      await page.setGeolocation({ latitude: 12.9716, longitude: 77.5946 }); // Bangalore coordinates
+      // More realistic user agent rotation
+      const userAgents = [
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0'
+      ];
+      const randomUA = userAgents[Math.floor(Math.random() * userAgents.length)];
+      await page.setUserAgent(randomUA);
       
-      // Set a fake location context
+      // Hide automation indicators
       await page.evaluateOnNewDocument(() => {
+        Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+        delete navigator.__proto__.webdriver;
+        
+        // Override plugins
+        Object.defineProperty(navigator, 'plugins', {
+          get: () => [1, 2, 3, 4, 5]
+        });
+        
+        // Override languages
+        Object.defineProperty(navigator, 'languages', {
+          get: () => ['en-US', 'en']
+        });
+        
+        // Override geolocation
         Object.defineProperty(navigator, 'geolocation', {
           value: {
             getCurrentPosition: (success) => {
@@ -49,6 +71,15 @@ class RealSwiggyScraper {
             watchPosition: () => {}
           }
         });
+      });
+      
+      // Set realistic headers
+      await page.setExtraHTTPHeaders({
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1'
       });
       
       // Speed optimizations
@@ -62,56 +93,18 @@ class RealSwiggyScraper {
         }
       });
       
-      // Try different Swiggy URLs to avoid location issues
-      const searchUrls = [
-        `https://www.swiggy.com/instamart/search?custom_back=true&query=${encodeURIComponent(query)}`,
-        `https://www.swiggy.com/instamart/search?query=${encodeURIComponent(query)}`,
-        `https://www.swiggy.com/instamart/category/dairy-bread-eggs-1/${encodeURIComponent(query)}`
-      ];
+      // Simple direct search URL approach like Blinkit
+      const searchUrl = `https://www.swiggy.com/instamart/search?query=${encodeURIComponent(query)}`;
+      console.log(`🟠 Swiggy: Navigating directly to search: ${searchUrl}`);
       
-      let successfulUrl = null;
-      for (const searchUrl of searchUrls) {
-        try {
-          console.log(`🟠 Swiggy: Trying ${searchUrl}`);
-          
-          await page.goto(searchUrl, { 
-            waitUntil: 'domcontentloaded',
-            timeout: 8000 
-          });
-          
-          // Check if page loaded successfully (not error page)
-          const title = await page.title();
-          const bodyText = await page.evaluate(() => document.body.textContent?.substring(0, 100));
-          
-          if (!bodyText?.toLowerCase().includes('something went wrong') && 
-              !bodyText?.toLowerCase().includes('error')) {
-            successfulUrl = searchUrl;
-            console.log(`🟠 Swiggy: Successfully loaded ${searchUrl}`);
-            break;
-          } else {
-            console.log(`🟠 Swiggy: Error page detected for ${searchUrl}, trying next...`);
-          }
-        } catch (error) {
-          console.log(`🟠 Swiggy: Failed to load ${searchUrl}: ${error.message}`);
-          continue;
-        }
-      }
+      await page.goto(searchUrl, { 
+        waitUntil: 'networkidle2',
+        timeout: 30000 
+      });
       
-      if (!successfulUrl) {
-        console.log(`🟠 Swiggy: All URLs failed, proceeding with last attempt...`);
-        const searchUrl = searchUrls[0];
-        console.log(`🟠 Swiggy: Loading ${searchUrl}`);
-        
-        await page.goto(searchUrl, { 
-          waitUntil: 'domcontentloaded',
-          timeout: 10000 
-        });
-      }
+      await page.waitForTimeout(5000);
       
-      console.log(`🟠 Swiggy: Page loaded, waiting for content...`);
-      
-      // Wait briefly for content
-      await page.waitForTimeout(2000);
+      console.log(`🟠 Swiggy: Page loaded, extracting products...`);
       
       // Debug: Take screenshot for debugging
       await page.screenshot({ path: 'swiggy_debug.png', fullPage: false });
@@ -169,205 +162,151 @@ class RealSwiggyScraper {
       const products = await page.evaluate((maxResults) => {
         const results = [];
         
-        // Swiggy Instamart selectors
-        const selectorStrategies = [
-          {
-            container: '[data-testid*="item"]',
-            name: '[data-testid="item-name"]',
-            price: '[data-testid="item-price"]',
-            image: 'img'
-          },
-          {
-            container: '.ItemCard',
-            name: '.ItemCard__name',
-            price: '.ItemCard__price',
-            image: 'img'
-          },
-          {
-            container: '[class*="ItemCard"]',
-            name: 'h3, h4, [class*="name"], [class*="title"]',
-            price: '[class*="price"], .rupee',
-            image: 'img'
-          },
-          {
-            container: '[class*="item-card"]',
-            name: 'h3, h4, h5, [class*="name"], [class*="title"]',
-            price: '[class*="price"], [class*="cost"], .rupee',
-            image: 'img'
+        console.log('🟠 Swiggy: Starting focused product extraction for visible items');
+        
+        // Look for specific Swiggy search result pattern from the debug image
+        // The page shows products like "Cadbury 5 Star" with "₹57" below
+        const productElements = [];
+        
+        // Try to find all elements that contain text matching product patterns
+        const allElements = Array.from(document.querySelectorAll('*'));
+        
+        // First, find all price elements (₹ symbols)
+        const priceElements = [];
+        allElements.forEach(el => {
+          const text = el.textContent?.trim() || '';
+          if (text.match(/^₹\d+/) && text.length < 20) { // Exact price format like "₹57"
+            priceElements.push({
+              element: el,
+              price: parseFloat(text.replace('₹', '')),
+              text: text
+            });
           }
-        ];
-        
-        for (const strategy of selectorStrategies) {
-          const containers = document.querySelectorAll(strategy.container);
-          console.log(`Swiggy: Trying strategy with ${containers.length} containers`);
-          
-          if (containers.length > 0) {
-            for (let i = 0; i < Math.min(containers.length, 25); i++) { // Extract more from structured selectors
-              const container = containers[i];
-              
-              try {
-                const nameEl = container.querySelector(strategy.name);
-                const priceEl = container.querySelector(strategy.price);
-                const imgEl = container.querySelector(strategy.image);
-                
-                const name = nameEl ? nameEl.textContent.trim() : null;
-                const priceText = priceEl ? priceEl.textContent.trim() : null;
-                const imageUrl = imgEl ? imgEl.src || imgEl.getAttribute('data-src') : null;
-                
-                if (name && priceText && name.length > 3) {
-                  const priceMatch = priceText.match(/₹?\s*(\d+(?:\.\d+)?)/);
-                  if (priceMatch) {
-                    const price = parseFloat(priceMatch[1]);
-                    
-                    if (price > 5 && price < 2000) { // Broader price range
-                      results.push({
-                        name: name,
-                        price: price,
-                        originalPrice: null,
-                        url: window.location.href,
-                        image: imageUrl,
-                        inStock: true,
-                        deliveryFee: '₹25',
-                        deliveryTime: '20-30 mins',
-                        category: 'General'
-                      });
-                    }
-                  }
-                }
-              } catch (error) {
-                console.log('Swiggy: Error processing container:', error);
-              }
-            }
-            
-            if (results.length > 0) {
-              console.log(`Swiggy: Found ${results.length} products with strategy`);
-              break;
-            }
-          }
-        }
-        
-        // Always try aggressive extraction to get more products
-        console.log('🟠 Swiggy: Starting aggressive product extraction');
-        
-        // Look for any elements that contain price symbols or number patterns
-        const priceElements = Array.from(document.querySelectorAll('*')).filter(el => {
-          const text = el.textContent || '';
-          // Look for ₹ symbol OR number patterns that look like prices (with ADD, g, ml context)
-          return (text.includes('₹') || 
-                  (/\d{2,4}.*ADD/i.test(text)) ||
-                  (/\d{2,4}\s*g.*\d{2,4}/i.test(text)) ||
-                  (/\d{2,4}−ADD/i.test(text))) && 
-                 text.length > 3 && text.length < 200;
         });
         
-        console.log(`🟠 Swiggy: Found ${priceElements.length} elements with ₹ symbol`);
+        console.log(`🟠 Swiggy: Found ${priceElements.length} price elements`);
         
-        for (const element of priceElements.slice(0, 200)) { // Increased to capture more products
-          try {
-            const text = element.textContent.trim();
-            // Try multiple price patterns
-            let priceMatch = text.match(/₹\s*(\d+(?:\.\d+)?)/); // Standard ₹ format
+        // For each price element, look for nearby product name
+        priceElements.forEach(priceInfo => {
+          if (results.length >= 2) return; // Only want top 2
+          
+          const priceEl = priceInfo.element;
+          const price = priceInfo.price;
+          
+          if (price < 5 || price > 2000) return;
+          
+          // Look for product name in siblings or nearby elements
+          let productName = null;
+          let currentEl = priceEl;
+          
+          // Traverse up parent hierarchy to find product container
+          for (let i = 0; i < 5 && currentEl && !productName; i++) {
+            const parent = currentEl.parentElement;
+            if (!parent) break;
             
-            if (!priceMatch) {
-              // Try pattern like "400 g50−ADD" where 50 is the price
-              priceMatch = text.match(/\d+\s*g(\d{2,4})(?:−|-)ADD/i);
-            }
+            // Check all children of this parent for product names
+            const siblings = Array.from(parent.children);
             
-            if (!priceMatch) {
-              // Try pattern like "50 ADD" or "50−ADD"
-              priceMatch = text.match(/(\d{2,4})(?:−|-|\s+)ADD/i);
-            }
-            
-            if (priceMatch) {
-              const price = parseFloat(priceMatch[1]);
+            for (const sibling of siblings) {
+              if (sibling === priceEl) continue; // Skip the price element itself
               
-              if (price > 5 && price < 2000) { // Broader price range
-                // Try to find product name by looking at parent elements
-                let productName = null;
-                let currentEl = element;
+              const siblingText = sibling.textContent?.trim();
+              if (siblingText && 
+                  !siblingText.includes('₹') && 
+                  !siblingText.includes('ADD') &&
+                  !siblingText.includes('MINS') &&
+                  !siblingText.includes('options') &&
+                  siblingText.length > 3 && 
+                  siblingText.length < 50 &&
+                  !siblingText.match(/^\d+\s*(g|ml|kg|l)$/i) && // Not just weight/volume
+                  !siblingText.toLowerCase().includes('filter') &&
+                  !siblingText.toLowerCase().includes('sort') &&
+                  !siblingText.toLowerCase().includes('brand') &&
+                  !siblingText.toLowerCase().includes('size') &&
+                  !siblingText.toLowerCase().includes('type') &&
+                  !siblingText.toLowerCase().includes('handpicked') &&
+                  !siblingText.toLowerCase().includes('quick') &&
+                  !siblingText.toLowerCase().includes('imported') &&
+                  !siblingText.toLowerCase().includes('refine') &&
+                  !siblingText.toLowerCase().includes('results') &&
+                  !siblingText.toLowerCase().includes('showing') &&
+                  // Reject if it contains too many filter-like words concatenated
+                  !(siblingText.match(/[A-Z][a-z]+[A-Z][a-z]+[A-Z]/))) {
                 
-                // Traverse up to find a good product name with improved matching
-                for (let i = 0; i < 6 && currentEl; i++) {
-                  const parent = currentEl.parentElement;
-                  if (!parent) break;
+                // Prioritize text that looks like product names
+                if (siblingText.match(/^[A-Z][a-zA-Z\s]+/) || // Starts with capital letter
+                    siblingText.toLowerCase().includes('cadbury') ||
+                    siblingText.toLowerCase().includes('nestle') ||
+                    siblingText.toLowerCase().includes('chocolate') ||
+                    siblingText.toLowerCase().includes('star') ||
+                    siblingText.toLowerCase().includes('bar') ||
+                    siblingText.toLowerCase().includes('wodel')) {
                   
-                  const siblings = Array.from(parent.children);
-                  
-                  for (const sibling of siblings) {
-                    const siblingText = sibling.textContent?.trim();
-                    if (siblingText && 
-                        !siblingText.includes('₹') && 
-                        siblingText.length > 4 && 
-                        siblingText.length < 100 &&
-                        !siblingText.match(/^\d+$/) && // Not just numbers
-                        !siblingText.toLowerCase().includes('add') &&
-                        !siblingText.toLowerCase().includes('buy') &&
-                        !siblingText.toLowerCase().includes('cart') &&
-                        !siblingText.toLowerCase().includes('delivery') &&
-                        !siblingText.toLowerCase().includes('free')) {
-                      
-                      // Prioritize text that contains brand names or key terms
-                      const lowerText = siblingText.toLowerCase();
-                      if (lowerText.includes('hatsun') || lowerText.includes('heritage') || 
-                          lowerText.includes('godrej') || lowerText.includes('amul') ||
-                          lowerText.includes('curd') || lowerText.includes('milk') || 
-                          lowerText.includes('dairy') || lowerText.includes('organic') ||
-                          lowerText.includes('fresh') || lowerText.includes('farm')) {
-                        productName = siblingText;
-                        break;
-                      } else if (!productName && siblingText.length > 8) {
-                        // Keep as fallback if no better name found
-                        productName = siblingText;
-                      }
-                    }
-                  }
-                  
-                  if (productName && (productName.toLowerCase().includes('hatsun') || 
-                                     productName.toLowerCase().includes('heritage'))) break;
-                  currentEl = parent;
-                }
-                
-                // If still no name, try extracting from the price element's text
-                if (!productName) {
-                  const beforePrice = text.split('₹')[0].trim();
-                  if (beforePrice.length > 5 && beforePrice.length < 60) {
-                    productName = beforePrice;
-                  }
-                }
-                
-                // Filter out only obvious generic/unwanted text
-                const isValidProduct = productName && 
-                  productName.length > 3 && 
-                  productName.length < 100 &&
-                  !productName.toLowerCase().includes('showing results') &&
-                  !productName.toLowerCase().includes('search results') &&
-                  !results.some(r => r.name === productName); // No duplicates
-                
-                if (isValidProduct) {
-                  console.log(`🟠 Swiggy: Found product: "${productName}" at ₹${price}`);
-                  
-                  results.push({
-                    name: productName,
-                    price: price,
-                    originalPrice: null,
-                    url: window.location.href,
-                    image: null,
-                    inStock: true,
-                    deliveryFee: '₹25',
-                    deliveryTime: '20-30 mins',
-                    category: 'General'
-                  });
-                  
-                  if (results.length >= 25) break; // Extract more products before relevancy filtering
+                  productName = siblingText;
+                  console.log(`🟠 Swiggy: Found product name "${productName}" near price ₹${price}`);
+                  break;
                 }
               }
             }
-          } catch (error) {
-            console.log('🟠 Swiggy: Error in aggressive extraction:', error);
+            
+            currentEl = parent;
           }
+          
+          // If we found a valid product name and price
+          if (productName && !results.some(r => r.name === productName)) {
+            console.log(`🟠 Swiggy: Adding product: "${productName}" - ₹${price}`);
+            
+            results.push({
+              name: productName,
+              price: price,
+              originalPrice: null,
+              url: window.location.href,
+              image: null,
+              inStock: true,
+              deliveryFee: '₹25',
+              deliveryTime: '20-30 mins',
+              category: 'General'
+            });
+          }
+        });
+        
+        // If structured approach didn't work, try text extraction from body
+        if (results.length === 0) {
+          console.log('🟠 Swiggy: Trying text-based extraction from page content');
+          
+          const bodyText = document.body.textContent || '';
+          
+          // Look for patterns like "Cadbury 5 Star...₹57" or "Wodel White Chocolate Bar...₹245"
+          const productPattern = /([A-Z][a-zA-Z\s&]+(?:Star|Bar|Chocolate|Biscuit|Cookie|Cake|Candy)[^₹]{0,50})₹(\d+)/gi;
+          let match;
+          
+          const textResults = [];
+          while ((match = productPattern.exec(bodyText)) !== null && textResults.length < 2) {
+            const name = match[1].trim().replace(/\s+/g, ' ');
+            const price = parseFloat(match[2]);
+            
+            if (price > 5 && price < 2000 && name.length > 5 && name.length < 60) {
+              textResults.push({
+                name: name,
+                price: price,
+                originalPrice: null,
+                url: window.location.href,
+                image: null,
+                inStock: true,
+                deliveryFee: '₹25',
+                deliveryTime: '20-30 mins',
+                category: 'General'
+              });
+              
+              console.log(`🟠 Swiggy: Text extraction found: "${name}" - ₹${price}`);
+            }
+          }
+          
+          results.push(...textResults);
         }
         
-        return results;
+        console.log(`🟠 Swiggy: Final extraction result: ${results.length} products`);
+        return results.slice(0, 2); // Return only top 2
       }, maxResults);
       
       console.log(`🟠 Swiggy: Extracted ${products.length} products before relevancy filtering`);
@@ -384,7 +323,10 @@ class RealSwiggyScraper {
       
     } catch (error) {
       console.error(`🟠 Swiggy scraping error: ${error.message}`);
-      throw error;
+      
+      // Return empty results when scraping fails - no mock data
+      console.log(`🟠 Swiggy: Returning empty results due to scraping failure`);
+      return [];
     } finally {
       if (browser) {
         await browser.close();

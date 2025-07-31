@@ -24,15 +24,6 @@ router.get('/search', async (req, res) => {
     // Process and store results
     console.log(`🔄 Processing scraping results: ${scrapingResults.length} platforms`);
     const products = [];
-    const productMap = new Map(); // To group products by name
-    
-    // Helper functions (moved outside the loop)
-    const normalizeProductName = (name) => {
-      return name.toLowerCase()
-        .replace(/[()]/g, '') // Remove parentheses but keep other chars
-        .replace(/\s+/g, ' ') // Normalize spaces
-        .trim();
-    };
     
     for (const platformResult of scrapingResults) {
       const status = platformResult.success ? '✅ SUCCESS' : '❌ FAILED';
@@ -45,47 +36,35 @@ router.get('/search', async (req, res) => {
         });
         
         for (const scrapedProduct of platformResult.products) {
-          const normalizedName = normalizeProductName(scrapedProduct.name);
+          // Don't group products - create separate entry for each platform result
+          const productData = {
+            id: Math.floor(Math.random() * 1000000),
+            name: scrapedProduct.name,
+            category: scrapedProduct.category || 'General',
+            image_url: scrapedProduct.image,
+            created_at: new Date().toISOString(),
+            prices: [{
+              id: 0,
+              platform: platformResult.platform,
+              price: scrapedProduct.price,
+              original_price: scrapedProduct.originalPrice,
+              url: scrapedProduct.url,
+              in_stock: scrapedProduct.inStock,
+              delivery_fee: scrapedProduct.deliveryFee,
+              delivery_time: scrapedProduct.deliveryTime,
+              scraped_at: new Date().toISOString()
+            }]
+          };
           
-          // Use exact product name as key - no fuzzy matching for now
-          const productKey = normalizedName;
-          
-          if (!productMap.has(productKey)) {
-            // Create new product entry
-            const productData = {
-              id: Math.floor(Math.random() * 1000000),
-              name: scrapedProduct.name,
-              category: scrapedProduct.category || 'General',
-              image_url: scrapedProduct.image,
-              created_at: new Date().toISOString(),
-              prices: []
-            };
-            productMap.set(productKey, productData);
-            console.log(`➕ Created new product: "${scrapedProduct.name}" (${platformResult.platform})`);
-          } else {
-            console.log(`🔄 Adding price to existing product: "${scrapedProduct.name}" (${platformResult.platform})`);
-          }
-          
-          // Add price data
-          const productData = productMap.get(productKey);
-          productData.prices.push({
-            id: 0,
-            platform: platformResult.platform,
-            price: scrapedProduct.price,
-            original_price: scrapedProduct.originalPrice,
-            url: scrapedProduct.url,
-            in_stock: scrapedProduct.inStock,
-            delivery_fee: scrapedProduct.deliveryFee,
-            delivery_time: scrapedProduct.deliveryTime,
-            scraped_at: new Date().toISOString()
-          });
+          products.push(productData);
+          console.log(`➕ Added product: "${scrapedProduct.name}" from ${platformResult.platform} - ₹${scrapedProduct.price}`);
         }
       }
     }
     
-    // Convert map to array and limit results
-    console.log(`🔄 ProductMap contains ${productMap.size} unique products`);
-    const finalProducts = Array.from(productMap.values()).slice(0, parseInt(limit));
+    // Limit results  
+    console.log(`🔄 Products list contains ${products.length} total products`);
+    const finalProducts = products.slice(0, parseInt(limit));
     console.log(`📦 Returning ${finalProducts.length} products to client`);
     
     // Optionally cache in database for future requests
@@ -167,23 +146,9 @@ router.get('/search', async (req, res) => {
     
     console.log(`🎉 Live search completed for "${query}": found ${finalProducts.length} products`);
     console.log(`📦 Returning ${finalProducts.length} products to client`);
-    // For debugging, include scraping results summary
-    const debugInfo = {
-      products: finalProducts,
-      debug: {
-        total_platforms: scrapingResults.length,
-        platform_results: scrapingResults.map(r => ({
-          platform: r.platform,
-          success: r.success,
-          product_count: r.success ? r.products.length : 0,
-          error: r.error || null
-        })),
-        unique_products_found: productMap.size,
-        returned_products: finalProducts.length
-      }
-    };
     
-    res.json(debugInfo);
+    // Return clean product data without debug info
+    res.json(finalProducts);
     
   } catch (error) {
     console.error('Error in live search:', error);
