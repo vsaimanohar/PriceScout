@@ -3,6 +3,63 @@ const { getAllRows, getRow, runQuery } = require('../database');
 const { scrapeProduct, scrapeAllPlatforms } = require('../scrapers/index');
 const router = express.Router();
 
+// Helper function to find similar products using fuzzy matching
+async function findSimilarProduct(productName) {
+  try {
+    // Get all existing products
+    const existingProducts = await getAllRows('SELECT id, name FROM products');
+    
+    if (existingProducts.length === 0) return null;
+    
+    // Normalize the input product name
+    const normalizedInput = normalizeProductName(productName);
+    
+    // Find best match
+    let bestMatch = null;
+    let highestScore = 0;
+    
+    for (const existing of existingProducts) {
+      const normalizedExisting = normalizeProductName(existing.name);
+      const similarity = calculateSimilarity(normalizedInput, normalizedExisting);
+      
+      // If similarity is high enough, consider it a match
+      if (similarity > 0.7 && similarity > highestScore) {
+        highestScore = similarity;
+        bestMatch = existing;
+        console.log(`📝 Product match found: "${productName}" -> "${existing.name}" (similarity: ${similarity.toFixed(2)})`);
+      }
+    }
+    
+    return bestMatch;
+  } catch (error) {
+    console.error('Error in findSimilarProduct:', error);
+    return null;
+  }
+}
+
+// Normalize product names for better matching
+function normalizeProductName(name) {
+  return name
+    .toLowerCase()
+    .replace(/\s+/g, ' ') // Normalize spaces
+    .replace(/[^\w\s]/g, '') // Remove special chars
+    .replace(/\b(combo|pack|pouch|cup|tub|g|ml|kg|pack)\b/g, '') // Remove common suffixes
+    .replace(/\b\d+\s*(g|ml|kg|grams?|liters?|litres?|pcs?|pieces?)\b/g, '') // Remove weights/quantities
+    .replace(/\s+/g, ' ') // Clean up spaces again
+    .trim();
+}
+
+// Calculate similarity between two strings using Jaccard similarity
+function calculateSimilarity(str1, str2) {
+  const words1 = new Set(str1.split(' ').filter(w => w.length > 2));
+  const words2 = new Set(str2.split(' ').filter(w => w.length > 2));
+  
+  const intersection = new Set([...words1].filter(x => words2.has(x)));
+  const union = new Set([...words1, ...words2]);
+  
+  return union.size === 0 ? 0 : intersection.size / union.size;
+}
+
 // Live scraping endpoint
 router.post('/live/:productName', async (req, res) => {
   try {
@@ -35,11 +92,8 @@ router.post('/live/:productName', async (req, res) => {
       if (platformResult.success && platformResult.products.length > 0) {
         for (const scrapedProduct of platformResult.products) {
           try {
-            // Check if product already exists
-            let existingProduct = await getRow(
-              'SELECT id FROM products WHERE LOWER(name) = LOWER(?)',
-              [scrapedProduct.name]
-            );
+            // Check if product already exists using fuzzy matching
+            let existingProduct = await findSimilarProduct(scrapedProduct.name);
             
             let productId;
             

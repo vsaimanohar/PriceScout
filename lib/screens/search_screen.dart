@@ -303,9 +303,10 @@ class _SearchScreenState extends State<SearchScreen> {
     if (_searchController.text.isNotEmpty) {
       // Show no results found
       return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
             Icon(
               Icons.search_off,
               size: 80,
@@ -330,13 +331,15 @@ class _SearchScreenState extends State<SearchScreen> {
             ),
           ],
         ),
+        ),
       );
     }
 
     // Show popular products when no search is active
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
+    return Expanded(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 16),
           child: Column(
@@ -401,6 +404,7 @@ class _SearchScreenState extends State<SearchScreen> {
                 ),
         ),
       ],
+      ),
     );
   }
 

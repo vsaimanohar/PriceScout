@@ -5,7 +5,7 @@ const router = express.Router();
 // Search products - now performs live scraping
 router.get('/search', async (req, res) => {
   try {
-    const { q: query, limit = 5 } = req.query;
+    const { q: query, limit = 20 } = req.query;
     
     if (!query || query.trim().length === 0) {
       return res.json([]);
@@ -26,6 +26,14 @@ router.get('/search', async (req, res) => {
     const products = [];
     const productMap = new Map(); // To group products by name
     
+    // Helper functions (moved outside the loop)
+    const normalizeProductName = (name) => {
+      return name.toLowerCase()
+        .replace(/[()]/g, '') // Remove parentheses but keep other chars
+        .replace(/\s+/g, ' ') // Normalize spaces
+        .trim();
+    };
+    
     for (const platformResult of scrapingResults) {
       const status = platformResult.success ? '✅ SUCCESS' : '❌ FAILED';
       const count = platformResult.success ? platformResult.products.length : 0;
@@ -35,28 +43,12 @@ router.get('/search', async (req, res) => {
         platformResult.products.forEach((product, index) => {
           console.log(`   📦 ${platformResult.platform}: "${product.name}" - ₹${product.price}`);
         });
+        
         for (const scrapedProduct of platformResult.products) {
-          // Create a normalized product key for better matching
-          const normalizeProductName = (name) => {
-            return name.toLowerCase()
-              .replace(/[^\w\s]/g, '') // Remove special characters
-              .replace(/\s+/g, ' ') // Normalize spaces
-              .trim();
-          };
-          
           const normalizedName = normalizeProductName(scrapedProduct.name);
           
-          // Try to find similar existing product
-          let matchedKey = null;
-          for (const [key, product] of productMap) {
-            const similarity = calculateSimilarity(normalizedName, normalizeProductName(product.name));
-            if (similarity > 0.7) { // 70% similarity threshold
-              matchedKey = key;
-              break;
-            }
-          }
-          
-          const productKey = matchedKey || normalizedName;
+          // Use exact product name as key - no fuzzy matching for now
+          const productKey = normalizedName;
           
           if (!productMap.has(productKey)) {
             // Create new product entry
@@ -69,6 +61,9 @@ router.get('/search', async (req, res) => {
               prices: []
             };
             productMap.set(productKey, productData);
+            console.log(`➕ Created new product: "${scrapedProduct.name}" (${platformResult.platform})`);
+          } else {
+            console.log(`🔄 Adding price to existing product: "${scrapedProduct.name}" (${platformResult.platform})`);
           }
           
           // Add price data
@@ -86,42 +81,12 @@ router.get('/search', async (req, res) => {
           });
         }
       }
-      
-      // Helper function to calculate string similarity
-      function calculateSimilarity(str1, str2) {
-        const longer = str1.length > str2.length ? str1 : str2;
-        const shorter = str1.length > str2.length ? str2 : str1;
-        const editDistance = levenshteinDistance(longer, shorter);
-        return (longer.length - editDistance) / longer.length;
-      }
-      
-      function levenshteinDistance(str1, str2) {
-        const matrix = [];
-        for (let i = 0; i <= str2.length; i++) {
-          matrix[i] = [i];
-        }
-        for (let j = 0; j <= str1.length; j++) {
-          matrix[0][j] = j;
-        }
-        for (let i = 1; i <= str2.length; i++) {
-          for (let j = 1; j <= str1.length; j++) {
-            if (str2.charAt(i - 1) === str1.charAt(j - 1)) {
-              matrix[i][j] = matrix[i - 1][j - 1];
-            } else {
-              matrix[i][j] = Math.min(
-                matrix[i - 1][j - 1] + 1,
-                matrix[i][j - 1] + 1,
-                matrix[i - 1][j] + 1
-              );
-            }
-          }
-        }
-        return matrix[str2.length][str1.length];
-      }
     }
     
     // Convert map to array and limit results
+    console.log(`🔄 ProductMap contains ${productMap.size} unique products`);
     const finalProducts = Array.from(productMap.values()).slice(0, parseInt(limit));
+    console.log(`📦 Returning ${finalProducts.length} products to client`);
     
     // Optionally cache in database for future requests
     try {
@@ -202,7 +167,23 @@ router.get('/search', async (req, res) => {
     
     console.log(`🎉 Live search completed for "${query}": found ${finalProducts.length} products`);
     console.log(`📦 Returning ${finalProducts.length} products to client`);
-    res.json(finalProducts);
+    // For debugging, include scraping results summary
+    const debugInfo = {
+      products: finalProducts,
+      debug: {
+        total_platforms: scrapingResults.length,
+        platform_results: scrapingResults.map(r => ({
+          platform: r.platform,
+          success: r.success,
+          product_count: r.success ? r.products.length : 0,
+          error: r.error || null
+        })),
+        unique_products_found: productMap.size,
+        returned_products: finalProducts.length
+      }
+    };
+    
+    res.json(debugInfo);
     
   } catch (error) {
     console.error('Error in live search:', error);

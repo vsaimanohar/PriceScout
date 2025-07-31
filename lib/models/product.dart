@@ -65,12 +65,16 @@ class Product {
   // Price comparison logic
   Price? get cheapestPrice {
     if (prices.isEmpty) return null;
-    return prices.where((p) => p.inStock).reduce((a, b) => a.price < b.price ? a : b);
+    final inStockPrices = prices.where((p) => p.inStock).toList();
+    if (inStockPrices.isEmpty) return prices.isNotEmpty ? prices.first : null;
+    return inStockPrices.reduce((a, b) => a.price < b.price ? a : b);
   }
 
   Price? get mostExpensivePrice {
     if (prices.isEmpty) return null;
-    return prices.where((p) => p.inStock).reduce((a, b) => a.price > b.price ? a : b);
+    final inStockPrices = prices.where((p) => p.inStock).toList();
+    if (inStockPrices.isEmpty) return prices.isNotEmpty ? prices.first : null;
+    return inStockPrices.reduce((a, b) => a.price > b.price ? a : b);
   }
 
   double? get averagePrice {

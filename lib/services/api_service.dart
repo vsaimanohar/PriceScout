@@ -30,7 +30,22 @@ class ApiService {
       ).timeout(timeoutDuration);
       
       if (response.statusCode == 200) {
-        final List<dynamic> data = json.decode(response.body);
+        final dynamic responseBody = json.decode(response.body);
+        
+        // Handle both old format (direct array) and new format (object with products array)
+        final List<dynamic> data;
+        if (responseBody is Map<String, dynamic> && responseBody.containsKey('products')) {
+          // New format with debug info
+          data = responseBody['products'] as List<dynamic>;
+          print('API Debug: ${responseBody['debug']}'); // Log debug info for development
+        } else if (responseBody is List) {
+          // Old format - direct array
+          data = responseBody;
+        } else {
+          print('Unexpected response format: $responseBody');
+          return [];
+        }
+        
         return data.map((item) => Product.fromJson(item)).toList();
       } else if (response.statusCode == 404) {
         return []; // No products found
