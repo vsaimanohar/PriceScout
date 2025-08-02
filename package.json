@@ -1,0 +1,13 @@
+{
+  "name": "price-comparison-app-root",
+  "version": "1.0.0",
+  "description": "Price comparison app - Railway deployment helper",
+  "scripts": {
+    "install": "cd backend && npm install",
+    "start": "cd backend && npm start",
+    "dev": "cd backend && npm run dev"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}

@@ -1,14 +1,9 @@
 [build]
-builder = "nixpacks"
+builder = "dockerfile"
 
 [deploy]
-startCommand = "cd backend && npm start"
+startCommand = "npm start"
 
-# Environment variables for production
 [env]
 NODE_ENV = "production"
 SCRAPER_DEBUG = "false"
-
-# Nixpacks configuration to handle backend subdirectory
-[build.nixpacks]
-buildCommand = "cd backend && npm install"
