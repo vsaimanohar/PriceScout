@@ -12,7 +12,7 @@ class RealBlinkitScraper {
       console.log(`🟡 Blinkit: Real scraping for "${query}"`);
       
       browser = await puppeteer.launch({
-        headless: false, // Use visible browser to debug
+        headless: process.env.SCRAPER_DEBUG !== 'true', // Only show browser if SCRAPER_DEBUG=true
         args: [
           '--no-sandbox',
           '--disable-setuid-sandbox',

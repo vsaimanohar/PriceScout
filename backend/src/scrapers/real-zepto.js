@@ -5,6 +5,20 @@ class RealZeptoScraper {
   constructor() {
     this.baseUrl = 'https://www.zeptonow.com';
     this.searchUrl = 'https://www.zeptonow.com/search';
+    
+    // Production-ready configuration
+    this.isProduction = process.env.NODE_ENV === 'production';
+    this.enableDebug = process.env.ENABLE_DEBUG === 'true' || !this.isProduction;
+    
+    if (!this.enableDebug) {
+      console.log('🟣 Zepto: Debug logging disabled (production mode)');
+    }
+  }
+  
+  log(message) {
+    if (this.enableDebug) {
+      console.log(message);
+    }
   }
 
   async searchProducts(query, maxResults = 5) {

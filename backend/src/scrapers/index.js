@@ -8,17 +8,17 @@ const platforms = {
   zepto: {
     name: 'Zepto',
     scraper: realZeptoScraper,
-    enabled: true // Re-enabled with improved extraction and cleaning
+    enabled: true // Enabled - runs headless (no popup)
   },
   blinkit: {
     name: 'Blinkit',
     scraper: realBlinkitScraper,
-    enabled: true
+    enabled: true // Enabled - runs headless (no popup)
   },
   swiggy: {
     name: 'Swiggy Instamart',
     scraper: realSwiggyScraper,
-    enabled: false // Re-enabled with simplified approach
+    enabled: false // Keep disabled for now
   }
 };
 
