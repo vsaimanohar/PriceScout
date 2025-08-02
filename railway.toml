@@ -1,9 +1,0 @@
-[build]
-builder = "dockerfile"
-
-[deploy]
-startCommand = "npm start"
-
-[env]
-NODE_ENV = "production"
-SCRAPER_DEBUG = "false"

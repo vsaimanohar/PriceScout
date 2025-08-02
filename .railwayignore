@@ -1,0 +1,12 @@
+pubspec.yaml
+pubspec.lock
+lib/
+web/
+test/
+.dart_tool/
+build/
+flutter_app/
+.metadata
+analysis_options.yaml
+*.md
+run_demo.sh
