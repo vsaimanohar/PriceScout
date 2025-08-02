@@ -1,6 +1,6 @@
 // Fixed Zepto scraper that handles React loading properly
 const puppeteer = require('puppeteer');
-
+require("dotenv").config()
 class RealZeptoScraper {
   constructor() {
     this.baseUrl = 'https://www.zeptonow.com';
@@ -31,6 +31,7 @@ class RealZeptoScraper {
         console.log(`🟣 Zepto: Real scraping for "${query}" (attempt ${retryCount + 1}/${maxRetries + 1})`);
         
         browser = await puppeteer.launch({
+          executablePath: process.env.NODE_ENV == 'production' ? process.env.PUPPETEER_EXECUTABLE_PATH : puppeteer.executablePath(),
           headless: "new",
           args: [
             '--no-sandbox',

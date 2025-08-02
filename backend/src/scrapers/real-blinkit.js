@@ -1,4 +1,5 @@
 const puppeteer = require('puppeteer');
+require("dotenv").config()
 
 class RealBlinkitScraper {
   constructor() {
@@ -13,6 +14,7 @@ class RealBlinkitScraper {
       
       browser = await puppeteer.launch({
         headless: process.env.SCRAPER_DEBUG !== 'true', // Only show browser if SCRAPER_DEBUG=true
+        executablePath: process.env.NODE_ENV == 'production' ? process.env.PUPPETEER_EXECUTABLE_PATH : puppeteer.executablePath(),
         args: [
           '--no-sandbox',
           '--disable-setuid-sandbox',
