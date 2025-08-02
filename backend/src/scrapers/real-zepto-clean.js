@@ -106,34 +106,6 @@ class RealZeptoScraper {
         
         console.log(`🟣 Zepto: Debug info:`, debugInfo);
         
-        // FIRST: Let's see what we're actually getting from the site
-        console.log(`🟣 Zepto: === DEBUGGING RAW SITE CONTENT ===`);
-        const rawContent = await page.evaluate(() => {
-          return {
-            fullBodyText: document.body.textContent?.substring(0, 2000) || 'NO BODY TEXT',
-            allElementsWithPrices: Array.from(document.querySelectorAll('*'))
-              .filter(el => el.textContent && el.textContent.includes('₹'))
-              .slice(0, 10)
-              .map(el => ({
-                tagName: el.tagName,
-                className: el.className || 'NO_CLASS',
-                textContent: el.textContent?.substring(0, 200) || 'NO_TEXT'
-              }))
-          };
-        });
-        
-        console.log(`🟣 === FULL BODY TEXT (first 2000 chars) ===`);
-        console.log(rawContent.fullBodyText);
-        console.log(`🟣 === END BODY TEXT ===\n`);
-        
-        console.log(`🟣 === ELEMENTS WITH PRICES (first 10) ===`);
-        rawContent.allElementsWithPrices.forEach((el, i) => {
-          console.log(`${i+1}. ${el.tagName}.${el.className}:`);
-          console.log(`   "${el.textContent}"`);
-          console.log('');
-        });
-        console.log(`🟣 === END ELEMENTS ===\n`);
-
         const products = await this.extractProductsFromPage(page, query, maxResults);
         
         if (products.length > 0) {
@@ -241,81 +213,114 @@ class RealZeptoScraper {
   }
 
   async extractProductsFromPage(page, query, maxResults = 5) {
-    console.log(`🟣 Zepto: Starting SIMPLE extraction...`);
+    console.log(`🟣 Zepto: Starting optimized extraction from available content...`);
     
     const products = await page.evaluate((query, maxResults) => {
       const results = [];
       
-      // STEP 1: Define what to avoid (promotional/UI text)
-      const junkWords = [
+      // Words that indicate promotional content or UI elements (to filter out)
+      const promotionalWords = [
         'coupon', 'earn', 'get', 'sign', 'up', 'worth', 'flat', 'offer', 'discount', 
         'save', 'free', 'delivery', 'welcome', 'both', 'refer', 'friend', 'bonus',
         'cashback', 'reward', 'promo', 'deal', 'special', 'limited', 'time',
-        'showing', 'results', 'search', 'cart', 'login', 'location', 'empty',
-        'first', 'order', 'code', 'minutes', 'use', 'off', 'you', 'their'
+        'showing', 'results', 'search', 'cart', 'login', 'location', 'empty'
       ];
       
       const seenProducts = new Set();
       
-      // STEP 2: Get all the text from the page
-      const bodyText = document.body.textContent || '';
-      console.log(`🟣 🌐 Total page text length: ${bodyText.length} characters`);
-      console.log(`🟣 📄 Page text sample:`, bodyText.substring(0, 400));
+      // Primary strategy: Extract products from Zepto's price-based structure
+      console.log(`🟣 Using targeted Zepto extraction...`);
       
-      // STEP 3: Find all prices on the page (₹10 to ₹1000)
-      console.log(`🟣 🔍 Searching for prices in text...`);
+      const bodyText = document.body.textContent || '';
+      console.log(`🟣 Body text sample: ${bodyText.substring(0, 500)}`);
+      
+      // First, find all price positions in the text
       const priceRegex = /₹(\d+)/g;
-      const pricesFound = [];
+      const priceMatches = [];
       let match;
       
       while ((match = priceRegex.exec(bodyText)) !== null) {
         const price = parseInt(match[1]);
         if (price >= 10 && price <= 1000) {
-          pricesFound.push({
+          priceMatches.push({
             price: price,
             position: match.index,
-            priceText: match[0]
+            fullMatch: match[0]
           });
-          console.log(`🟣 💰 Found price: ₹${price} at position ${match.index}`);
-        } else {
-          console.log(`🟣 ❌ Rejected price: ₹${price} (out of range)`);
         }
       }
       
-      console.log(`🟣 ✅ Total valid prices found: ${pricesFound.length}`);
+      console.log(`🟣 Found ${priceMatches.length} valid prices in text`);
       
-      // STEP 4: For each price, try to find the product name nearby
-      pricesFound.forEach((priceInfo, index) => {
+      // For each price, extract the product name from the context around it
+      priceMatches.forEach((priceInfo, index) => {
         if (results.length >= maxResults) return;
         
-        // Get text around this price (100 chars before, 20 chars after)
-        const startPos = Math.max(0, priceInfo.position - 100);
-        const endPos = Math.min(bodyText.length, priceInfo.position + 20);
-        const textAroundPrice = bodyText.substring(startPos, endPos);
+        // Extract 200 characters before the price to find product name
+        const startPos = Math.max(0, priceInfo.position - 200);
+        const endPos = Math.min(bodyText.length, priceInfo.position + 50);
+        const context = bodyText.substring(startPos, endPos);
         
-        console.log(`🟣 === PROCESSING PRICE ₹${priceInfo.price} ===`);
-        console.log(`🟣 📍 Position: ${priceInfo.position}`);
-        console.log(`🟣 📝 Context: "${textAroundPrice}"`);
+        console.log(`🟣 Price ${priceInfo.price} context: "${context.substring(context.length - 100)}"`);
         
-        // STEP 5: SIMPLE CLEAN APPROACH - Just search term + price differentiation
-        let productName = query.charAt(0).toUpperCase() + query.slice(1).toLowerCase();
-        console.log(`🟣 🏷️ Clean product name: "${productName}"`);
+        // Try to extract product name from this context
+        let productName = '';
         
-        // Create final product name - SIMPLIFIED: just productName + price for differentiation
-        const finalProductName = `${productName}`;
+        // Method 1: Look for brand names first (most reliable)
+        const brandMatch = context.match(/(yippee|maggi|nestle|knorr|wai|bambino)[^₹]*$/i);
+        if (brandMatch) {
+          const brandSection = brandMatch[0];
+          // Clean up the brand section to get product name
+          productName = brandSection
+            .replace(/ADD.*$/i, '')
+            .replace(/SAVE.*$/i, '')
+            .replace(/[^A-Za-z0-9\s\.\-]/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+        }
         
-        console.log(`🟣 🎉 Final product: "${finalProductName}" - ₹${priceInfo.price}`);
+        // Method 2: Look for food-related keywords
+        if (!productName) {
+          const foodMatch = context.match(/([A-Za-z\s]+(?:noodles?|pasta|instant|masala|suji|tricolor|maggi|vermicelli)[^₹]*?)(?:ADD|₹|$)/i);
+          if (foodMatch) {
+            productName = foodMatch[1]
+              .replace(/[^A-Za-z0-9\s\.\-]/g, ' ')
+              .replace(/\s+/g, ' ')
+              .trim();
+          }
+        }
         
-        // STEP 6: Add this product - Allow multiple variants by unique price
-        const productKey = `${finalProductName.toLowerCase()}_${priceInfo.price}`;
-        
-        if (!seenProducts.has(productKey)) {
-          seenProducts.add(productKey);
+        // Method 3: Extract meaningful words before price (fallback)
+        if (!productName) {
+          const beforePrice = context.substring(0, context.lastIndexOf('₹'));
+          const words = beforePrice.split(/\s+/).filter(word => 
+            word.length >= 3 && 
+            /^[A-Za-z]/.test(word) &&
+            !promotionalWords.some(promWord => 
+              word.toLowerCase().includes(promWord.toLowerCase())
+            )
+          );
           
-          console.log(`🟣 ✅ ADDED: "${finalProductName}" - ₹${priceInfo.price}`);
+          if (words.length >= 2) {
+            productName = words.slice(-4).join(' ').trim(); // Take last 4 meaningful words
+          }
+        }
+        
+        // Validate and add product
+        if (productName && 
+            productName.length >= 4 && 
+            productName.length <= 100 &&
+            !promotionalWords.some(word => 
+              productName.toLowerCase().includes(word.toLowerCase())
+            ) &&
+            !seenProducts.has(productName.toLowerCase())) {
+          
+          seenProducts.add(productName.toLowerCase());
+          
+          console.log(`🟣 Extracted product: "${productName}" - ₹${priceInfo.price}`);
           
           results.push({
-            name: finalProductName,
+            name: productName,
             price: priceInfo.price,
             originalPrice: null,
             url: window.location.href,
@@ -325,8 +330,6 @@ class RealZeptoScraper {
             deliveryTime: '10-15 mins',
             category: 'Food & Snacks'
           });
-        } else {
-          console.log(`🟣 ⚠️ DUPLICATE: "${finalProductName}" - ₹${priceInfo.price}`);
         }
       });
       
@@ -335,6 +338,7 @@ class RealZeptoScraper {
       
     }, query, maxResults);
     
+    console.log(`🟣 Zepto: Extracted ${products.length} products from available content`);
     return products.slice(0, maxResults);
   }
 
@@ -345,49 +349,36 @@ class RealZeptoScraper {
     const primaryTerm = queryTerms[0];
     const secondaryTerms = queryTerms.slice(1);
     
-    console.log(`🟣 Zepto: Looking for products matching "${primaryTerm}"`);
+    const knownBrands = ['yippee', 'maggi', 'nestle', 'mtr', 'knorr', 'wai', 'bambino', 'amul', 'heritage', 'hatsun'];
+    const isBrandSearch = knownBrands.some(brand => primaryTerm.includes(brand) || brand.includes(primaryTerm));
+    
+    console.log(`🟣 Zepto: Primary term: "${primaryTerm}" (Brand search: ${isBrandSearch})`);
     
     const scoredProducts = products.map(product => {
       const productName = product.name.toLowerCase();
       let score = 0;
       let hasAnyMatch = false;
       
-      // Exact match for primary term (highest score)
       if (productName.includes(primaryTerm)) {
         score += 10;
         hasAnyMatch = true;
-        console.log(`🟣 "${product.name}" matches "${primaryTerm}" (+10 points)`);
       }
       
-      // Fuzzy match for primary term (for typos like "parleg" -> "parle")
-      if (!hasAnyMatch && primaryTerm.length > 4) {
-        const fuzzyMatch = productName.includes(primaryTerm.substring(0, primaryTerm.length - 1));
-        if (fuzzyMatch) {
-          score += 7;
-          hasAnyMatch = true;
-          console.log(`🟣 "${product.name}" fuzzy matches "${primaryTerm}" (+7 points)`);
-        }
-      }
-      
-      // Secondary terms
       secondaryTerms.forEach(term => {
         if (productName.includes(term)) {
           score += 5;
           hasAnyMatch = true;
-          console.log(`🟣 "${product.name}" matches secondary "${term}" (+5 points)`);
         }
       });
       
-      // Full query match
       if (productName.includes(query.toLowerCase())) {
         score += 8;
         hasAnyMatch = true;
-        console.log(`🟣 "${product.name}" matches full query (+8 points)`);
       }
       
-      // If no match at all, reject
-      if (!hasAnyMatch) {
-        console.log(`🟣 "${product.name}" - NO MATCH (0 points)`);
+      if (isBrandSearch && !productName.includes(primaryTerm)) {
+        return { ...product, relevancyScore: 0 };
+      } else if (!hasAnyMatch) {
         return { ...product, relevancyScore: 0 };
       }
       

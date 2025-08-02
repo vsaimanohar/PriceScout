@@ -85,55 +85,6 @@ class RealZeptoScraper {
         
         // Extract products using optimized method
         console.log(`🟣 Zepto: Starting optimized product extraction...`);
-        
-        // Debug: Check what elements we actually have
-        const debugInfo = await page.evaluate(() => {
-          const allElements = document.querySelectorAll('*');
-          const elementsWithPrice = Array.from(allElements).filter(el => 
-            el.textContent && el.textContent.includes('₹')
-          );
-          
-          return {
-            totalElements: allElements.length,
-            elementsWithPrice: elementsWithPrice.length,
-            samplePriceElements: elementsWithPrice.slice(0, 5).map(el => ({
-              tagName: el.tagName,
-              className: el.className,
-              textContent: el.textContent?.substring(0, 100)
-            }))
-          };
-        });
-        
-        console.log(`🟣 Zepto: Debug info:`, debugInfo);
-        
-        // FIRST: Let's see what we're actually getting from the site
-        console.log(`🟣 Zepto: === DEBUGGING RAW SITE CONTENT ===`);
-        const rawContent = await page.evaluate(() => {
-          return {
-            fullBodyText: document.body.textContent?.substring(0, 2000) || 'NO BODY TEXT',
-            allElementsWithPrices: Array.from(document.querySelectorAll('*'))
-              .filter(el => el.textContent && el.textContent.includes('₹'))
-              .slice(0, 10)
-              .map(el => ({
-                tagName: el.tagName,
-                className: el.className || 'NO_CLASS',
-                textContent: el.textContent?.substring(0, 200) || 'NO_TEXT'
-              }))
-          };
-        });
-        
-        console.log(`🟣 === FULL BODY TEXT (first 2000 chars) ===`);
-        console.log(rawContent.fullBodyText);
-        console.log(`🟣 === END BODY TEXT ===\n`);
-        
-        console.log(`🟣 === ELEMENTS WITH PRICES (first 10) ===`);
-        rawContent.allElementsWithPrices.forEach((el, i) => {
-          console.log(`${i+1}. ${el.tagName}.${el.className}:`);
-          console.log(`   "${el.textContent}"`);
-          console.log('');
-        });
-        console.log(`🟣 === END ELEMENTS ===\n`);
-
         const products = await this.extractProductsFromPage(page, query, maxResults);
         
         if (products.length > 0) {
@@ -241,100 +192,180 @@ class RealZeptoScraper {
   }
 
   async extractProductsFromPage(page, query, maxResults = 5) {
-    console.log(`🟣 Zepto: Starting SIMPLE extraction...`);
+    console.log(`🟣 Zepto: Starting optimized extraction from available content...`);
     
     const products = await page.evaluate((query, maxResults) => {
       const results = [];
       
-      // STEP 1: Define what to avoid (promotional/UI text)
-      const junkWords = [
+      // Words that indicate promotional content (to filter out)
+      const promotionalWords = [
         'coupon', 'earn', 'get', 'sign', 'up', 'worth', 'flat', 'offer', 'discount', 
         'save', 'free', 'delivery', 'welcome', 'both', 'refer', 'friend', 'bonus',
-        'cashback', 'reward', 'promo', 'deal', 'special', 'limited', 'time',
-        'showing', 'results', 'search', 'cart', 'login', 'location', 'empty',
-        'first', 'order', 'code', 'minutes', 'use', 'off', 'you', 'their'
+        'cashback', 'reward', 'promo', 'deal', 'special', 'limited', 'time'
+      ];
+      
+      // Look for product containers first (much faster than regex on full HTML)
+      const productSelectors = [
+        '[data-testid*="product"]',
+        '[class*="product" i]:not([class*="promo"])',
+        '[class*="item" i]:not([class*="menu"])',
+        'div[class*="card"]:not([class*="promo"])',
+        'div[class*="tile"]',
+        'article', 'section'
       ];
       
       const seenProducts = new Set();
       
-      // STEP 2: Get all the text from the page
-      const bodyText = document.body.textContent || '';
-      console.log(`🟣 🌐 Total page text length: ${bodyText.length} characters`);
-      console.log(`🟣 📄 Page text sample:`, bodyText.substring(0, 400));
-      
-      // STEP 3: Find all prices on the page (₹10 to ₹1000)
-      console.log(`🟣 🔍 Searching for prices in text...`);
-      const priceRegex = /₹(\d+)/g;
-      const pricesFound = [];
-      let match;
-      
-      while ((match = priceRegex.exec(bodyText)) !== null) {
-        const price = parseInt(match[1]);
-        if (price >= 10 && price <= 1000) {
-          pricesFound.push({
-            price: price,
-            position: match.index,
-            priceText: match[0]
-          });
-          console.log(`🟣 💰 Found price: ₹${price} at position ${match.index}`);
-        } else {
-          console.log(`🟣 ❌ Rejected price: ₹${price} (out of range)`);
-        }
-      }
-      
-      console.log(`🟣 ✅ Total valid prices found: ${pricesFound.length}`);
-      
-      // STEP 4: For each price, try to find the product name nearby
-      pricesFound.forEach((priceInfo, index) => {
+      productSelectors.forEach(selector => {
         if (results.length >= maxResults) return;
         
-        // Get text around this price (100 chars before, 20 chars after)
-        const startPos = Math.max(0, priceInfo.position - 100);
-        const endPos = Math.min(bodyText.length, priceInfo.position + 20);
-        const textAroundPrice = bodyText.substring(startPos, endPos);
+        const productElements = Array.from(document.querySelectorAll(selector));
+        console.log(`🟣 Found ${productElements.length} elements with selector: ${selector}`);
         
-        console.log(`🟣 === PROCESSING PRICE ₹${priceInfo.price} ===`);
-        console.log(`🟣 📍 Position: ${priceInfo.position}`);
-        console.log(`🟣 📝 Context: "${textAroundPrice}"`);
-        
-        // STEP 5: SIMPLE CLEAN APPROACH - Just search term + price differentiation
-        let productName = query.charAt(0).toUpperCase() + query.slice(1).toLowerCase();
-        console.log(`🟣 🏷️ Clean product name: "${productName}"`);
-        
-        // Create final product name - SIMPLIFIED: just productName + price for differentiation
-        const finalProductName = `${productName}`;
-        
-        console.log(`🟣 🎉 Final product: "${finalProductName}" - ₹${priceInfo.price}`);
-        
-        // STEP 6: Add this product - Allow multiple variants by unique price
-        const productKey = `${finalProductName.toLowerCase()}_${priceInfo.price}`;
-        
-        if (!seenProducts.has(productKey)) {
-          seenProducts.add(productKey);
+        productElements.slice(0, 15).forEach(element => {
+          if (results.length >= maxResults) return;
           
-          console.log(`🟣 ✅ ADDED: "${finalProductName}" - ₹${priceInfo.price}`);
+          const text = element.textContent || '';
+          const priceMatch = text.match(/₹(\d+)/);
           
-          results.push({
-            name: finalProductName,
-            price: priceInfo.price,
-            originalPrice: null,
-            url: window.location.href,
-            image: null,
-            inStock: true,
-            deliveryFee: 'Free',
-            deliveryTime: '10-15 mins',
-            category: 'Food & Snacks'
-          });
-        } else {
-          console.log(`🟣 ⚠️ DUPLICATE: "${finalProductName}" - ₹${priceInfo.price}`);
-        }
+          if (priceMatch) {
+            const price = parseInt(priceMatch[1]);
+            
+            if (price >= 10 && price <= 1000) {
+              // Look for product name in structured way
+              const titleElements = element.querySelectorAll(
+                'h1, h2, h3, h4, h5, [class*="title"], [class*="name"], [data-testid*="name"], [class*="product"]'
+              );
+              
+              let productName = '';
+              
+              if (titleElements.length > 0) {
+                // Find the most product-like title
+                for (let titleEl of titleElements) {
+                  const titleText = titleEl.textContent?.trim() || '';
+                  if (titleText.length >= 8 && 
+                      titleText.length <= 100 &&
+                      !promotionalWords.some(word => 
+                        titleText.toLowerCase().includes(word.toLowerCase())
+                      )) {
+                    productName = titleText;
+                    break;
+                  }
+                }
+              }
+              
+              // Fallback: extract from text content before price
+              if (!productName) {
+                const beforePrice = text.split('₹')[0];
+                const lines = beforePrice.split(/[\n\r]/).filter(line => {
+                  const trimmed = line.trim();
+                  return trimmed.length >= 8 && 
+                         trimmed.length <= 100 &&
+                         /[A-Za-z]{4,}/.test(trimmed) &&
+                         !promotionalWords.some(word => 
+                           trimmed.toLowerCase().includes(word.toLowerCase())
+                         );
+                });
+                
+                if (lines.length > 0) {
+                  productName = lines[0].trim();
+                }
+              }
+              
+              if (productName && 
+                  !seenProducts.has(productName.toLowerCase())) {
+                
+                // Clean the product name
+                productName = productName
+                  .replace(/u003e/g, '>')
+                  .replace(/u0026/g, '&')
+                  .replace(/&quot;/g, '"')
+                  .replace(/&amp;/g, '&')
+                  .replace(/\s+/g, ' ')
+                  .trim();
+                
+                seenProducts.add(productName.toLowerCase());
+                
+                console.log(`🟣 Found product: "${productName}" - ₹${price}`);
+                
+                results.push({
+                  name: productName,
+                  price: price,
+                  originalPrice: null,
+                  url: window.location.href,
+                  image: null,
+                  inStock: true,
+                  deliveryFee: 'Free',
+                  deliveryTime: '10-15 mins',
+                  category: 'Food & Snacks'
+                });
+              }
+            }
+          }
+        });
       });
+      
+      // Fallback: Lightweight text extraction if no products found
+      if (results.length === 0) {
+        console.log(`🟣 Fallback: Using lightweight text extraction...`);
+        
+        const bodyText = document.body.textContent || '';
+        const textChunks = bodyText.split('₹').slice(0, 50);
+        
+        textChunks.forEach(chunk => {
+          if (results.length >= maxResults) return;
+          
+          const match = chunk.match(/(\d+)/);
+          if (match) {
+            const price = parseInt(match[1]);
+            
+            if (price >= 10 && price <= 1000) {
+              const beforePriceIndex = bodyText.indexOf(`₹${price}`);
+              if (beforePriceIndex > 0) {
+                const textBefore = bodyText.substring(Math.max(0, beforePriceIndex - 200), beforePriceIndex);
+                const lines = textBefore.split(/[\n\r]/).filter(line => {
+                  const trimmed = line.trim();
+                  return trimmed.length >= 8 && 
+                         trimmed.length <= 80 &&
+                         /[A-Za-z]{4,}/.test(trimmed) &&
+                         !promotionalWords.some(word => 
+                           trimmed.toLowerCase().includes(word.toLowerCase())
+                         );
+                });
+                
+                if (lines.length > 0) {
+                  const productName = lines[lines.length - 1].trim();
+                  
+                  if (!seenProducts.has(productName.toLowerCase())) {
+                    seenProducts.add(productName.toLowerCase());
+                    
+                    console.log(`🟣 Fallback found: "${productName}" - ₹${price}`);
+                    
+                    results.push({
+                      name: productName,
+                      price: price,
+                      originalPrice: null,
+                      url: window.location.href,
+                      image: null,
+                      inStock: true,
+                      deliveryFee: 'Free',
+                      deliveryTime: '10-15 mins',
+                      category: 'Food & Snacks'
+                    });
+                  }
+                }
+              }
+            }
+          }
+        });
+      }
       
       console.log(`🟣 Total extraction results: ${results.length} products`);
       return results;
       
     }, query, maxResults);
     
+    console.log(`🟣 Zepto: Extracted ${products.length} products from available content`);
     return products.slice(0, maxResults);
   }
 
@@ -345,49 +376,36 @@ class RealZeptoScraper {
     const primaryTerm = queryTerms[0];
     const secondaryTerms = queryTerms.slice(1);
     
-    console.log(`🟣 Zepto: Looking for products matching "${primaryTerm}"`);
+    const knownBrands = ['yippee', 'maggi', 'nestle', 'mtr', 'knorr', 'wai', 'bambino', 'amul', 'heritage', 'hatsun'];
+    const isBrandSearch = knownBrands.some(brand => primaryTerm.includes(brand) || brand.includes(primaryTerm));
+    
+    console.log(`🟣 Zepto: Primary term: "${primaryTerm}" (Brand search: ${isBrandSearch})`);
     
     const scoredProducts = products.map(product => {
       const productName = product.name.toLowerCase();
       let score = 0;
       let hasAnyMatch = false;
       
-      // Exact match for primary term (highest score)
       if (productName.includes(primaryTerm)) {
         score += 10;
         hasAnyMatch = true;
-        console.log(`🟣 "${product.name}" matches "${primaryTerm}" (+10 points)`);
       }
       
-      // Fuzzy match for primary term (for typos like "parleg" -> "parle")
-      if (!hasAnyMatch && primaryTerm.length > 4) {
-        const fuzzyMatch = productName.includes(primaryTerm.substring(0, primaryTerm.length - 1));
-        if (fuzzyMatch) {
-          score += 7;
-          hasAnyMatch = true;
-          console.log(`🟣 "${product.name}" fuzzy matches "${primaryTerm}" (+7 points)`);
-        }
-      }
-      
-      // Secondary terms
       secondaryTerms.forEach(term => {
         if (productName.includes(term)) {
           score += 5;
           hasAnyMatch = true;
-          console.log(`🟣 "${product.name}" matches secondary "${term}" (+5 points)`);
         }
       });
       
-      // Full query match
       if (productName.includes(query.toLowerCase())) {
         score += 8;
         hasAnyMatch = true;
-        console.log(`🟣 "${product.name}" matches full query (+8 points)`);
       }
       
-      // If no match at all, reject
-      if (!hasAnyMatch) {
-        console.log(`🟣 "${product.name}" - NO MATCH (0 points)`);
+      if (isBrandSearch && !productName.includes(primaryTerm)) {
+        return { ...product, relevancyScore: 0 };
+      } else if (!hasAnyMatch) {
         return { ...product, relevancyScore: 0 };
       }
       
