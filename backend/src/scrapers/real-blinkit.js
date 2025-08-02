@@ -24,6 +24,9 @@ class RealBlinkitScraper {
       
       const page = await browser.newPage();
       await page.setViewport({ width: 1024, height: 768 });
+      page.on('console', (msg) => {
+        console.log(`🟡 [PAGE LOG]: ${msg.text()}`);
+      });
       await page.setUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
       
       // Navigate directly to search URL without location - Blinkit allows this!
@@ -102,12 +105,12 @@ class RealBlinkitScraper {
         // "OFFBudweiser 0.0 Non Alcoholic Beer330 ml₹94 ₹99ADD"
         
         const patterns = [
-          // Pattern 1: Discount OFF + Brand Name + size + price
-          /(\d+%\s*)?OFF([A-Z][a-zA-Z\s&\+\-\.0-9()]+?)(\d+(?:\s*x\s*)?\d*\s*(?:ml|g|kg|l))\s*₹(\d+)/gi,
-          // Pattern 2: Just Brand Name + size + price (without OFF)
-          /([A-Z][a-zA-Z\s&\+\-\.0-9()]+)(\d+(?:\s*x\s*)?\d*\s*(?:ml|g|kg|l))\s*₹(\d+)(?:\s*₹\d+)?ADD/gi,
-          // Pattern 3: Simple product name + price
-          /([A-Z][a-zA-Z\s&\+\-\.0-9()]{10,50})\s*₹(\d+)(?:\s*₹\d+)?ADD/gi
+          // Pattern 1: mins + Brand Name + size + price (most common format)
+          /\d+\s*mins([A-Z][a-zA-Z\s&\+\-\.0-9()]{8,50}?)(\d+\s*(?:g|kg|ml|l))\s*₹(\d+)/gi,
+          // Pattern 2: Brand Name + size + price + ADD
+          /([A-Z][a-zA-Z\s&\+\-\.0-9()]{8,50}?)(\d+\s*(?:g|kg|ml|l))\s*₹(\d+)(?:\s*₹\d+)?\s*ADD/gi,
+          // Pattern 3: Simple Brand + price + ADD 
+          /([A-Z][a-zA-Z\s&\+\-\.0-9()]{8,40})\s*₹(\d+)(?:\s*₹\d+)?\s*ADD/gi
         ];
         
         const extractedProducts = [];
@@ -135,9 +138,15 @@ class RealBlinkitScraper {
               continue;
             }
             
-            // Clean product name
+            // Simple cleanup - remove common prefixes/suffixes
             productName = productName
               .replace(/\s+/g, ' ')
+              .replace(/^(ADD|SAVE|OFF|\d+%|\d+\s*mins?|prMy Cart|My Cart|Welcome|Showing|No results)\s*/gi, '')
+              .replace(/\s*(ADD|SAVE|OFF|\d+%)$/gi, '')
+              .replace(/^\d+%\s*OFF\s*/gi, '')
+              .replace(/\d+\s*mins?\s*/gi, '')
+              .replace(/(No results for.*?Showing|Showing.*?products)/gi, '')
+              .replace(/^[^A-Za-z]*/, '')
               .trim();
             
             const fullProductName = size ? `${productName} ${size}` : productName;
@@ -167,7 +176,9 @@ class RealBlinkitScraper {
         results.push(...extractedProducts);
         
         // Fallback to DOM elements if text extraction didn't work
-        if (results.length < 2) {
+        console.log("results.length:--------------------------------------> ", results.length);
+        if (results.length <= 2) {
+          console.log("helooooooooooooo---------------------->")
           for (const selector of productSelectors) {
             const elements = document.querySelectorAll(selector);
             console.log(`Found ${elements.length} elements with selector: ${selector}`);
@@ -176,7 +187,7 @@ class RealBlinkitScraper {
               foundProducts = true;
               
               elements.forEach((element, index) => {
-                if (results.length >= 2) return;
+                if (results.length > 2) return;
                 
                 const text = element.textContent || '';
                 const priceMatch = text.match(/₹(\d+)/);
@@ -186,27 +197,42 @@ class RealBlinkitScraper {
                   
                   // Extract clean product names
                   let productName = text
-                    .replace(/ADD/gi, '') // Remove ADD buttons
-                    .replace(/\d+%\s*OFF/gi, '') // Remove discount labels
-                    .replace(/showing results for.*/gi, '') // Remove search result text
-                    .replace(/\d+\s*mins?\s*/gi, '') // Remove delivery time
-                    .replace(/My Cart/gi, '') // Remove cart text
-                    .split('₹')[0] // Take everything before first price
-                    .replace(/\s+/g, ' ') // Normalize spaces
+                    .replace(/ADD/gi, '')
+                    .replace(/\bmins\b/gi, '')          // standalone mins
+                    .replace(/^mins/gi, '')             // mins at start
+                    .replace(/mins(?=[A-Z])/gi, '')     // mins glued to capital
+                    .replace(/\d+%\s*OFF/gi, '')
+                    .replace(/showing results for.*/gi, '')
+                    .replace(/\d+\s*mins?\s*/gi, '')
+                    .replace(/My Cart/gi, '')
+                    .split('₹')[0]
+                    .replace(/\s+/g, ' ')
                     .trim();
-                  
-                  // Try to extract clean brand + product pattern
-                  const cleanMatch = text.match(/([A-Z][a-zA-Z\s&\+\-]+ (?:Cup Curd|Bread|Milk|Butter|Cheese|Dahi)[^₹\d]*?)(?=\d+\s*[gml]|₹)/i);
+
+                  // ✅ Also force remove mins from fallback match
+                  let cleanMatch = productName.match(
+                    /([A-Z][a-zA-Z\s&\+\-]+ (?:Cup Curd|Bread|Milk|Butter|Cheese|Dahi)[^₹\d]*?)(?=\d+\s*[gml]|₹)/i
+                  );
                   if (cleanMatch && cleanMatch[1].trim().length > 5) {
                     productName = cleanMatch[1].trim();
+                    // 🔑 Final force cleanup if match reintroduces 'mins'
+                    productName = productName
+                      .replace(/\bmins\b/gi, '')
+                      .replace(/^mins/gi, '')
+                      .replace(/mins(?=[A-Z])/gi, '')
+                      .replace(/\s+/g, ' ')
+                      .trim();
                   }
+                  if (cleanMatch && cleanMatch[1].trim().length > 5) {
+                    productName = cleanMatch[1].trim();
+}
                   
                   // Final cleanup
                   productName = productName
                     .replace(/^[^A-Za-z]*/, '') // Remove leading non-letters
                     .replace(/\s+/g, ' ')
                     .trim();
-                  
+                  console.log(`CLEANEDUP DONE NOW SHOWING PRDUCTNAME: ${productName}`);
                   if (price >= 5 && price <= 1000 && 
                       productName.length > 3 && productName.length < 100 &&
                       !results.some(r => r.name === productName)) {
@@ -283,7 +309,7 @@ class RealBlinkitScraper {
       console.log(`🟡 Blinkit: Extracted ${products.length} products:`);
       products.forEach((p, i) => console.log(`  ${i+1}. ${p.name} - ₹${p.price}`));
       
-      // Return first 2 relevant products  
+      // Return top 2 products (platforms already have good relevancy)
       return products.slice(0, 2);
       
     } catch (error) {
@@ -294,6 +320,56 @@ class RealBlinkitScraper {
         await browser.close();
       }
     }
+  }
+
+  cleanProductName(rawName) {
+    if (!rawName) return '';
+    
+    let cleaned = rawName
+      // 1. Normalize whitespace
+      .replace(/\s+/g, ' ')
+      .trim()
+      
+      // 2. Remove common UI elements and noise
+      .replace(/^(prMy Cart|My Cart|Welcome to|Please provide|Detect my|Showing|No results|related products|Cart)\s*/gi, '')
+      .replace(/(No results for.*?Showing|Showing.*?products|related products)/gi, '')
+      .replace(/^(ADD|SAVE|OFF|\d+%|\d+\s*mins?)\s*/gi, '')
+      .replace(/\s*(ADD|SAVE|OFF|\d+%)$/gi, '')
+      .replace(/^\d+%\s*OFF\s*/gi, '')
+      .replace(/\d+\s*mins?\s*/gi, '')
+      
+      // 3. Remove leading/trailing junk
+      .replace(/^[^A-Za-z]*/, '') // Remove leading non-letters
+      .replace(/[^A-Za-z0-9\s\.\-\(\)]*$/, '') // Remove trailing junk
+      .trim();
+    
+    // 4. Extract the actual product name (first meaningful part)
+    const parts = cleaned.split(/\s+/);
+    const meaningfulParts = [];
+    
+    for (const part of parts) {
+      // Stop at common breaking points
+      if (/^(Showing|results|for|related|products|₹|ADD|SAVE|OFF)$/i.test(part)) {
+        break;
+      }
+      // Skip pure numbers unless they look like weights/volumes
+      if (/^\d+$/.test(part) && !meaningfulParts.some(p => /^(g|ml|kg|l)$/i.test(p))) {
+        continue;
+      }
+      meaningfulParts.push(part);
+      
+      // Stop after reasonable product name length
+      if (meaningfulParts.length >= 8) break;
+    }
+    
+    const result = meaningfulParts.join(' ').trim();
+    
+    // 5. Final validation - return only if it looks like a real product name
+    if (result.length >= 8 && result.length <= 100 && /[A-Za-z]/.test(result)) {
+      return result;
+    }
+    
+    return '';
   }
 }
 

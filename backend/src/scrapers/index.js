@@ -8,7 +8,7 @@ const platforms = {
   zepto: {
     name: 'Zepto',
     scraper: realZeptoScraper,
-    enabled: false // Disabled due to poor search relevance on web interface
+    enabled: true // Re-enabled with improved extraction and cleaning
   },
   blinkit: {
     name: 'Blinkit',
@@ -18,7 +18,7 @@ const platforms = {
   swiggy: {
     name: 'Swiggy Instamart',
     scraper: realSwiggyScraper,
-    enabled: true // Re-enabled with simplified approach
+    enabled: false // Re-enabled with simplified approach
   }
 };
 

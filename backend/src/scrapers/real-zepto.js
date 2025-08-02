@@ -1,3 +1,5 @@
+// hatsun works but loading slow DOM is issue -> v2
+
 const puppeteer = require('puppeteer');
 
 class RealZeptoScraper {
@@ -274,8 +276,25 @@ class RealZeptoScraper {
       
       console.log(`🟣 Zepto: Page analysis:`, debugInfo);
       
-      // Extract products using multiple selector strategies
-      const products = await page.evaluate((maxResults) => {
+      // Retry mechanism - wait until we find products or max attempts
+      let products = [];
+      const maxAttempts = 5;
+      let attempt = 0;
+      
+      while (products.length === 0 && attempt < maxAttempts) {
+        attempt++;
+        console.log(`🟣 Zepto: Extraction attempt ${attempt}/${maxAttempts}`);
+        
+        if (attempt > 1) {
+          // Wait longer between attempts and scroll to trigger loading
+          await page.evaluate(() => {
+            window.scrollTo(0, document.body.scrollHeight / 2);
+          });
+          await page.waitForTimeout(5000);
+        }
+        
+        // Extract products using multiple selector strategies
+        products = await page.evaluate((maxResults) => {
         const results = [];
         
         // Zepto product selectors (try multiple approaches)
@@ -429,6 +448,13 @@ class RealZeptoScraper {
               /Haldirams?\s+[^₹\n]+/i,
               /BBB\s+[^₹\n]+/i,
               /VS\s+Mani[^₹\n]*/i,
+              // Add bourbon/biscuit patterns
+              /Sunfeast[^₹\n]*Bourbon[^₹\n]*/i,
+              /Britannia[^₹\n]*Bourbon[^₹\n]*/i,
+              /Dark\s+Fantasy[^₹\n]*Bourbon[^₹\n]*/i,
+              /Bourbon[^₹\n]*Biscuit[^₹\n]*/i,
+              /[A-Z][a-z]+\s+Bourbon[^₹\n]*/i,
+              /[A-Z][a-z]+\s+Biscuit[^₹\n]*/i,
               /[A-Z][a-z]+\s+Potato[^₹\n]*/i, // Generic "Brand Potato" pattern
               /[A-Z][a-z]+\s+Chips[^₹\n]*/i   // Generic "Brand Chips" pattern
             ];
@@ -492,16 +518,52 @@ class RealZeptoScraper {
               }
             }
             
-            // Validate product name
-            if (productName && 
-                productName.length > 3 && 
+            // Enhanced validation to avoid promotional junk
+            const isValidProduct = productName && 
+                productName.length > 8 && 
                 productName.length < 100 &&
-                !results.some(r => r.name === productName)) {
+                !results.some(r => r.name === productName) &&
+                // Reject promotional text
+                !productName.toLowerCase().includes('coupon') &&
+                !productName.toLowerCase().includes('offer') &&
+                !productName.toLowerCase().includes('discount') &&
+                !productName.toLowerCase().includes('cashback') &&
+                !productName.toLowerCase().includes('worth') &&
+                !productName.toLowerCase().includes('save up to') &&
+                !productName.toLowerCase().includes('get free') &&
+                // Must look like actual product
+                (/biscuit|cookie|milk|curd|bread|butter|cheese|chips|snack|chocolate|tea|coffee|rice|dal|oil|soap|shampoo/i.test(productName) ||
+                 productName.toLowerCase().includes('g ') ||
+                 productName.toLowerCase().includes('ml ') ||
+                 /\d+\s*[gml]\b/i.test(productName));
+            
+            if (isValidProduct) {
               
               console.log(`🟣 Zepto: Extracted from card: "${productName}" at ₹${price}`);
               
-              results.push({
-                name: productName,
+              // Enhanced inline cleaning to make names as clean as Blinkit
+              const cleanedName = productName
+                .replace(/\s+/g, ' ')
+                // Remove size prefixes like "10125 g" at the start
+                .replace(/^\d+\s*[gml]\s*/i, '')
+                .replace(/^\d+\s*x\s*\d+\.\d+\s*kg\s*/i, '')
+                // Remove rating patterns like "4.6(2.3k)" anywhere
+                .replace(/\d+\.\d+\([^)]+\)/g, '')
+                // Remove pipe separators and everything after them
+                .replace(/\s*\|\s*.*$/, '')
+                // Remove common descriptive text
+                .replace(/\s*(artificial\s+colour-free|trans\s+fat-free|preservative-free|gluten-free)/gi, '')
+                // Remove UI elements
+                .replace(/^(ADD|SAVE|OFF|\d+%|\d+\s*mins?|Grocery|Zepto|Welcome|Location)\s*/gi, '')
+                .replace(/\s*(ADD|SAVE|OFF|\d+%)$/gi, '')
+                .replace(/(sign up|you earn|earnings|location|detect)/gi, '')
+                // Clean up multiple spaces and trim
+                .replace(/\s+/g, ' ')
+                .trim();
+              
+              if (cleanedName && cleanedName.length >= 8) {
+                results.push({
+                  name: cleanedName,
                 price: price,
                 originalPrice: null,
                 url: window.location.href,
@@ -510,15 +572,101 @@ class RealZeptoScraper {
                 deliveryFee: 'Free',
                 deliveryTime: '10-15 mins',
                 category: 'General'
-              });
+                });
+              }
             }
-            }
-          } catch (error) {
+          }} catch (error) {
             console.log('🟣 Zepto: Error extracting from card:', error);
           }
         });
         
-        // Strategy 3: Fallback aggressive text parsing if we still don't have enough
+        // Strategy 3: Universal fallback - catch ANY product regardless of brand
+        if (results.length < 2) {
+          console.log('🟣 Zepto: Using universal fallback for any product');
+          
+          // Generic pattern that works for ANY product name + price
+          const universalPatterns = [
+            // Pattern 1: Any reasonable product name + size + price
+            /([A-Z][a-zA-Z\s&\+\-\.0-9()]{10,50})\s*(\d+\s*(?:g|kg|ml|l))?\s*₹(\d+)/gi,
+            // Pattern 2: Any product name + price (no size)
+            /([A-Z][a-zA-Z\s&\+\-\.0-9()]{10,40})\s*₹(\d+)/gi
+          ];
+          
+          universalPatterns.forEach(pattern => {
+            let match;
+            pattern.lastIndex = 0;
+            
+            while ((match = pattern.exec(allText)) !== null && results.length < 2) {
+              let productName, size, price;
+              
+              if (match.length === 4) {
+                // Has size
+                productName = match[1].trim();
+                size = match[2] ? match[2].trim() : '';
+                price = parseInt(match[3]);
+              } else if (match.length === 3) {
+                // No size
+                productName = match[1].trim();
+                size = '';
+                price = parseInt(match[2]);
+              } else {
+                continue;
+              }
+              
+              // Clean the product name
+              productName = productName
+                .replace(/\s+/g, ' ')
+                .replace(/^\d+\s*[gml]\s*/i, '') // Remove size prefix
+                .replace(/\d+\.\d+\([^)]+\)/g, '') // Remove ratings
+                .replace(/\s*\|\s*.*$/, '') // Remove pipe separators
+                .replace(/\s*(artificial\s+colour-free|trans\s+fat-free|preservative-free|gluten-free)/gi, '')
+                .replace(/^(ADD|SAVE|OFF|\d+%|\d+\s*mins?)\s*/gi, '')
+                .replace(/\s*(ADD|SAVE|OFF|\d+%)$/gi, '')
+                .replace(/^[^A-Za-z]*/, '') // Remove leading junk
+                .trim();
+              
+              const fullProductName = size ? `${productName} ${size}` : productName;
+              
+              // Better validation to avoid junk like "Get coupons worth"
+              const isValidProduct = price >= 5 && price <= 1000 && // Reasonable product price range
+                  productName.length >= 8 && productName.length <= 80 &&
+                  !results.some(r => r.name === fullProductName) &&
+                  // Reject promotional/non-product text
+                  !productName.toLowerCase().includes('coupon') &&
+                  !productName.toLowerCase().includes('offer') &&
+                  !productName.toLowerCase().includes('discount') &&
+                  !productName.toLowerCase().includes('cashback') &&
+                  !productName.toLowerCase().includes('reward') &&
+                  !productName.toLowerCase().includes('worth') &&
+                  !productName.toLowerCase().includes('save up to') &&
+                  !productName.toLowerCase().includes('get free') &&
+                  // Must contain food/product related terms
+                  (/biscuit|cookie|milk|curd|bread|butter|cheese|chips|snack|chocolate|tea|coffee|rice|dal|oil|soap|shampoo/i.test(productName) ||
+                   productName.toLowerCase().includes('g ') || // Has weight
+                   productName.toLowerCase().includes('ml ') || // Has volume
+                   /\d+\s*[gml]\b/i.test(productName)); // Contains size
+              
+              if (isValidProduct) {
+                
+                console.log(`🟣 Zepto: Universal fallback found: "${fullProductName}" - ₹${price}`);
+                
+                results.push({
+                  name: fullProductName,
+                  price: price,
+                  originalPrice: null,
+                  url: window.location.href,
+                  image: null,
+                  inStock: true,
+                  deliveryFee: 'Free',
+                  deliveryTime: '10-15 mins',
+                  category: 'General'
+                });
+              }
+            }
+          });
+        }
+        
+        // Strategy 4: Fallback aggressive text parsing if we still don't have enough
         if (results.length < 5) {
           console.log('🟣 Zepto: Using fallback text parsing');
           
@@ -527,7 +675,12 @@ class RealZeptoScraper {
             /Amul\s+[^₹\n]+₹(\d+)/gi,
             /Heritage\s+[^₹\n]+₹(\d+)/gi,
             /(\w+\s+)*Curd[^₹\n]*₹(\d+)/gi,
-            /(\w+\s+)*Milk[^₹\n]*₹(\d+)/gi
+            /(\w+\s+)*Milk[^₹\n]*₹(\d+)/gi,
+            // Add bourbon/biscuit patterns
+            /Sunfeast[^₹\n]*Bourbon[^₹\n]*₹(\d+)/gi,
+            /Britannia[^₹\n]*Bourbon[^₹\n]*₹(\d+)/gi,
+            /(\w+\s+)*Bourbon[^₹\n]*₹(\d+)/gi,
+            /(\w+\s+)*Biscuit[^₹\n]*₹(\d+)/gi
           ];
           
           textPatterns.forEach(pattern => {
@@ -546,8 +699,16 @@ class RealZeptoScraper {
                     
                     console.log(`🟣 Zepto: Pattern match: "${productName}" at ₹${price}`);
                     
-                    results.push({
-                      name: productName,
+                    // Simple inline cleaning
+                    const cleanedName = productName
+                      .replace(/\s+/g, ' ')
+                      .replace(/^(ADD|SAVE|OFF|\d+%|\d+\s*mins?|Grocery|Zepto|Welcome)\s*/gi, '')
+                      .replace(/\s*(ADD|SAVE|OFF|\d+%)$/gi, '')
+                      .trim();
+                    
+                    if (cleanedName && cleanedName.length >= 8 && !results.some(r => r.name === cleanedName)) {
+                      results.push({
+                        name: cleanedName,
                       price: price,
                       originalPrice: null,
                       url: window.location.href,
@@ -557,6 +718,7 @@ class RealZeptoScraper {
                       deliveryTime: '10-15 mins',
                       category: 'General'
                     });
+                    }
                   }
                 }
               } catch (error) {
@@ -567,19 +729,26 @@ class RealZeptoScraper {
         }
         
         return results;
-      }, maxResults);
+        }, maxResults);
+        
+        console.log(`🟣 Zepto: Attempt ${attempt}: Extracted ${products.length} products`);
+      }
       
-      console.log(`🟣 Zepto: Extracted ${products.length} products before relevancy filtering`);
+      if (products.length === 0) {
+        console.log(`🟣 Zepto: Failed to extract products after ${maxAttempts} attempts`);
+      }
       
-      // Apply relevancy algorithm - prioritize products that match search terms
-      const relevantProducts = this.filterByRelevancy(products, query);
+      console.log(`🟣 Zepto: Final result: ${products.length} products before relevancy filtering`);
       
-      // Log each relevant product found
-      relevantProducts.forEach((product, index) => {
-        console.log(`🟣 Zepto: Product ${index + 1}: "${product.name}" - ₹${product.price} (Relevancy: ${product.relevancyScore})`);
+      // Return top 2 products (platforms already have good relevancy)
+      const topProducts = products.slice(0, 2);
+      
+      // Log each product found
+      topProducts.forEach((product, index) => {
+        console.log(`🟣 Zepto: Product ${index + 1}: "${product.name}" - ₹${product.price}`);
       });
       
-      return relevantProducts;
+      return topProducts;
       
     } catch (error) {
       console.error(`🟣 Zepto scraping error: ${error.message}`);
@@ -589,6 +758,55 @@ class RealZeptoScraper {
         await browser.close();
       }
     }
+  }
+
+  cleanProductName(rawName) {
+    if (!rawName) return '';
+    
+    let cleaned = rawName
+      // 1. Normalize whitespace
+      .replace(/\s+/g, ' ')
+      .trim()
+      
+      // 2. Remove common UI elements and noise
+      .replace(/^(Grocery delivered|Zepto|Object\.assign|self\.__next_f|Welcome|Please|Detect|Location|Cart)\s*/gi, '')
+      .replace(/(sign up|you earn|earnings|location|detect|allow|enable)/gi, '')
+      .replace(/^(ADD|SAVE|OFF|\d+%|\d+\s*mins?|FREE)\s*/gi, '')
+      .replace(/\s*(ADD|SAVE|OFF|\d+%|FREE)$/gi, '')
+      .replace(/\d+\s*mins?\s*(delivery|FREE)?\s*/gi, '')
+      
+      // 3. Remove leading/trailing junk
+      .replace(/^[^A-Za-z]*/, '') // Remove leading non-letters
+      .replace(/[^A-Za-z0-9\s\.\-\(\)]*$/, '') // Remove trailing junk
+      .trim();
+    
+    // 4. Extract the actual product name (first meaningful part)
+    const parts = cleaned.split(/\s+/);
+    const meaningfulParts = [];
+    
+    for (const part of parts) {
+      // Stop at common breaking points
+      if (/^(earn|sign|up|get|you|location|detect|₹|ADD|SAVE|OFF|FREE)$/i.test(part)) {
+        break;
+      }
+      // Skip pure numbers unless they look like weights/volumes
+      if (/^\d+$/.test(part) && !meaningfulParts.some(p => /^(g|ml|kg|l)$/i.test(p))) {
+        continue;
+      }
+      meaningfulParts.push(part);
+      
+      // Stop after reasonable product name length
+      if (meaningfulParts.length >= 8) break;
+    }
+    
+    const result = meaningfulParts.join(' ').trim();
+    
+    // 5. Final validation - return only if it looks like a real product name
+    if (result.length >= 8 && result.length <= 100 && /[A-Za-z]/.test(result)) {
+      return result;
+    }
+    
+    return '';
   }
 
   filterByRelevancy(products, query) {
@@ -676,7 +894,7 @@ class RealZeptoScraper {
     const relevantProducts = scoredProducts
       .filter(product => product.relevancyScore > 0)
       .sort((a, b) => b.relevancyScore - a.relevancyScore)
-      .slice(0, 10); // Increased from 5 to 10 to show more results
+      .slice(0, 2); // Return top 2 products
     
     console.log(`🟣 Zepto: Filtered to ${relevantProducts.length} relevant products from ${products.length} total`);
     
