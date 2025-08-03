@@ -19,9 +19,12 @@ class RealBlinkitScraper {
           '--no-sandbox',
           '--disable-setuid-sandbox',
           '--disable-dev-shm-usage',
-          '--disable-gpu'
+          '--disable-gpu',
+          '--disable-web-security',
+          '--disable-blink-features=AutomationControlled',
+          '--disable-features=VizDisplayCompositor'
         ],
-        timeout: 10000
+        timeout: 15000
       });
       
       const page = await browser.newPage();
@@ -37,7 +40,7 @@ class RealBlinkitScraper {
       
       await page.goto(searchUrl, { 
         waitUntil: 'networkidle2',
-        timeout: 30000 
+        timeout: 60000 
       });
       
       await page.waitForTimeout(5000);

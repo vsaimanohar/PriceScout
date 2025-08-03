@@ -1,6 +1,6 @@
 FROM node:18-slim
 
-# Install Chrome dependencies for Puppeteer
+# Install Chrome dependencies for Puppeteer and build tools for SQLite
 RUN apt-get update && apt-get install -y \
   wget \
   ca-certificates \
@@ -17,6 +17,10 @@ RUN apt-get update && apt-get install -y \
   libxrandr2 \
   xdg-utils \
   chromium \
+  build-essential \
+  python3 \
+  make \
+  g++ \
   --no-install-recommends && \
   rm -rf /var/lib/apt/lists/*
 
@@ -27,14 +31,18 @@ ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 # Set working directory
 WORKDIR /app
 
-# Copy package files
-COPY backend/package*.json ./
+# Copy package files  
+COPY package*.json ./
 
-# Install dependencies
+# Install dependencies fresh in container
 RUN npm install
 
-# Copy app files
-COPY backend/ ./
+# Copy app files (excluding node_modules and database)
+COPY . ./
+RUN rm -rf node_modules database.db
+
+# Fresh install and rebuild for Linux architecture
+RUN npm install && npm rebuild sqlite3
 
 # Expose port
 EXPOSE 3000
