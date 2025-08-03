@@ -1,4 +1,5 @@
 const puppeteer = require('puppeteer');
+const browserPool = require('../services/browser-pool');
 require("dotenv").config()
 
 class RealBlinkitScraper {
@@ -7,28 +8,13 @@ class RealBlinkitScraper {
   }
 
   async searchProducts(query, maxResults = 2) {
-    let browser;
+    let page;
     
     try {
       console.log(`🟡 Blinkit: Real scraping for "${query}"`);
       
-      browser = await puppeteer.launch({
-        headless: process.env.SCRAPER_DEBUG !== 'true', // Only show browser if SCRAPER_DEBUG=true
-        executablePath: process.env.NODE_ENV == 'production' ? process.env.PUPPETEER_EXECUTABLE_PATH : puppeteer.executablePath(),
-        args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-dev-shm-usage',
-          '--disable-gpu',
-          '--disable-web-security',
-          '--disable-blink-features=AutomationControlled',
-          '--disable-features=VizDisplayCompositor'
-        ],
-        timeout: 15000
-      });
-      
-      const page = await browser.newPage();
-      await page.setViewport({ width: 1024, height: 768 });
+      // Use warm browser from pool
+      page = await browserPool.getPage('blinkit');
       page.on('console', (msg) => {
         console.log(`🟡 [PAGE LOG]: ${msg.text()}`);
       });
@@ -321,8 +307,8 @@ class RealBlinkitScraper {
       console.error(`🟡 Blinkit scraping error: ${error.message}`);
       throw error;
     } finally {
-      if (browser) {
-        await browser.close();
+      if (page) {
+        await page.close();
       }
     }
   }

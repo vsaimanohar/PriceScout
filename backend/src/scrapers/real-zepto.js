@@ -1,5 +1,6 @@
 // Fixed Zepto scraper that handles React loading properly
 const puppeteer = require('puppeteer');
+const browserPool = require('../services/browser-pool');
 require("dotenv").config()
 class RealZeptoScraper {
   constructor() {
@@ -22,7 +23,7 @@ class RealZeptoScraper {
   }
 
   async searchProducts(query, maxResults = 5) {
-    let browser;
+    let page;
     let retryCount = 0;
     const maxRetries = 2;
     
@@ -30,35 +31,11 @@ class RealZeptoScraper {
       try {
         console.log(`🟣 Zepto: Real scraping for "${query}" (attempt ${retryCount + 1}/${maxRetries + 1})`);
         
-        browser = await puppeteer.launch({
-          executablePath: process.env.NODE_ENV == 'production' ? process.env.PUPPETEER_EXECUTABLE_PATH : puppeteer.executablePath(),
-          headless: "new",
-          args: [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-gpu',
-            '--disable-images',
-            '--disable-plugins',
-            '--disable-extensions',
-            '--no-first-run',
-            '--no-default-browser-check',
-            '--disable-default-apps',
-            '--disable-blink-features=AutomationControlled',
-            '--disable-web-security',
-            '--disable-features=VizDisplayCompositor'
-          ],
-          timeout: 20000
-        });
-        
-        const page = await browser.newPage();
+        // Use warm browser from pool
+        page = await browserPool.getPage('zepto');
         
         // Set longer timeout for complex extraction
         page.setDefaultTimeout(60000);
-        
-        // Browser simulation
-        await page.setViewport({ width: 1920, height: 1080 });
-        await page.setUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
         
         // Set location to Chennai
         await page.setGeolocation({ latitude: 13.0827, longitude: 80.2707 });
@@ -161,7 +138,7 @@ class RealZeptoScraper {
           
           if (retryCount < maxRetries) {
             console.log(`🟣 Zepto: No products found, retrying...`);
-            await browser.close();
+            await page.close();
             retryCount++;
             continue;
           }
@@ -178,7 +155,7 @@ class RealZeptoScraper {
         console.error(`🟣 Zepto scraping error (attempt ${retryCount + 1}): ${error.message}`);
         
         if (browser) {
-          await browser.close();
+          await page.close();
           browser = null;
         }
         
@@ -192,7 +169,7 @@ class RealZeptoScraper {
         throw error;
       } finally {
         if (browser) {
-          await browser.close();
+          await page.close();
         }
       }
       
