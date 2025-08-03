@@ -41,7 +41,7 @@ class RealZeptoScraper {
         await page.setGeolocation({ latitude: 13.0827, longitude: 80.2707 });
         console.log(`🟣 Zepto: Location set to Chennai`);
         
-        const context = browser.defaultBrowserContext();
+        const context = page.browser().defaultBrowserContext();
         await context.overridePermissions('https://www.zeptonow.com', ['geolocation']);
         
         console.log(`🟣 Zepto: Navigating to search page...`);
@@ -154,9 +154,9 @@ class RealZeptoScraper {
       } catch (error) {
         console.error(`🟣 Zepto scraping error (attempt ${retryCount + 1}): ${error.message}`);
         
-        if (browser) {
+        if (page) {
           await page.close();
-          browser = null;
+          page = null;
         }
         
         if (retryCount < maxRetries) {
@@ -168,7 +168,7 @@ class RealZeptoScraper {
         
         throw error;
       } finally {
-        if (browser) {
+        if (page) {
           await page.close();
         }
       }
