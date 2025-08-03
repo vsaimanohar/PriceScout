@@ -1,0 +1,12 @@
+[build]
+  publish = "build/web"
+  command = """
+    export PATH="$PATH:/opt/flutter/bin"
+    git clone https://github.com/flutter/flutter.git -b stable --depth 1 /opt/flutter
+    flutter doctor
+    flutter pub get
+    flutter build web
+  """
+
+[build.environment]
+  FLUTTER_VERSION = "stable"
