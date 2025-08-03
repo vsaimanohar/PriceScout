@@ -15,7 +15,7 @@ class ApiException implements Exception {
 
 class ApiService {
   static const String baseUrl = 'https://qecpricetracker-1.onrender.com/api';
-  static const Duration timeoutDuration = Duration(seconds: 120); // Increased for scraping
+  static const Duration timeoutDuration = Duration(seconds: 300); // 3 minutes for scraping
   
   Future<List<Product>> searchProducts(String query) async {
     if (query.trim().isEmpty) return [];
@@ -194,7 +194,7 @@ class ApiService {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
         },
-      ).timeout(const Duration(seconds: 60)); // Longer timeout for scraping
+      ).timeout(const Duration(seconds: 300)); // 3 minutes timeout for scraping
       
       if (response.statusCode == 200) {
         return json.decode(response.body);
