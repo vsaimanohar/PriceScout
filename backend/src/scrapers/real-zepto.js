@@ -70,13 +70,20 @@ class RealZeptoScraper {
           });
         }
         
-        console.log(`🟣 Zepto: Page loaded, waiting for React content to load...`);
+        console.log(`🟣 Zepto: Page loaded, checking for immediate data...`);
         
-        // Enhanced waiting strategy for React components
-        await this.waitForReactContent(page);
+        // First try: Check if data is already in HTML (faster)
+        let fastProducts = await this.tryImmediateExtraction(page, query);
         
-        // Extract products using optimized method
-        console.log(`🟣 Zepto: Starting optimized product extraction...`);
+        if (!fastProducts || fastProducts.length === 0) {
+          console.log(`🟣 Zepto: No immediate data found, waiting for React content...`);
+          // Enhanced waiting strategy for React components
+          await this.waitForReactContent(page);
+          console.log(`🟣 Zepto: Starting optimized product extraction...`);
+        } else {
+          console.log(`🟣 Zepto: ⚡ Found ${fastProducts.length} products in initial HTML! (Fast path)`);
+          return this.filterRelevantProducts(fastProducts, query);
+        }
         
         // Debug: Check what elements we actually have
         const debugInfo = await page.evaluate(() => {
@@ -328,6 +335,107 @@ class RealZeptoScraper {
     }, query, maxResults);
     
     return products.slice(0, maxResults);
+  }
+
+  // Try to extract products from initial HTML before React loads
+  async tryImmediateExtraction(page, query) {
+    try {
+      const products = await page.evaluate((searchQuery) => {
+        const results = [];
+        
+        // Get the raw body text that contains product data
+        const bodyText = document.body.textContent || document.body.innerText || '';
+        
+        if (bodyText.includes('Showing results for') && bodyText.includes('ADD₹')) {
+          console.log('🟣 Found product data in body text!');
+          
+          // Pattern: "ADD₹125[size info]Product Name[rating info]ADD₹next..."
+          // We need to extract: price, product name, and size
+          
+          const productMatches = bodyText.match(/ADD₹\d+[^A-Z]*[A-Z][^A-Z₹]*(?=ADD₹|\d+\.\d+\(|\d+g|\d+ml|$)/g);
+          
+          if (productMatches && productMatches.length > 0) {
+            console.log(`🟣 Found ${productMatches.length} potential products in text`);
+            
+            productMatches.forEach((match, index) => {
+              if (results.length >= 5) return; // Limit results
+              
+              try {
+                // Extract price: "ADD₹125" -> "125"
+                const priceMatch = match.match(/ADD₹(\d+)/);
+                if (!priceMatch) return;
+                
+                let price = parseInt(priceMatch[1]);
+                
+                // Clean the match to get product name
+                let cleanText = match.replace(/ADD₹\d+/, '').trim();
+                
+                // Remove size info like "1 pack (160 g)" from the beginning
+                cleanText = cleanText.replace(/^\d+\s*(pack|kg|g|ml|ltr|litre|bottle|can|box)\s*\([^)]+\)/, '').trim();
+                
+                // Extract product name (everything before rating or save info)
+                let productName = cleanText.split(/\d+\.\d+\(|\(\d+|\d+g|\d+ml|SAVE₹|₹\d+/)[0].trim();
+                
+                // Clean up product name
+                productName = productName.replace(/[₹\d]+$/, '').trim();
+                
+                if (productName && productName.length > 2 && price > 0) {
+                  // Check if this product matches the search query
+                  const searchTerms = searchQuery.toLowerCase().split(' ');
+                  const nameWords = productName.toLowerCase();
+                  const hasMatch = searchTerms.some(term => 
+                    term.length > 2 && nameWords.includes(term)
+                  );
+                  
+                  if (hasMatch) {
+                    console.log(`🟣 Extracted: "${productName}" - ₹${price}`);
+                    results.push({
+                      name: productName,
+                      price: price,
+                      platform: 'zepto',
+                      url: window.location.href,
+                      image: null,
+                      inStock: true,
+                      deliveryFee: 'Free',
+                      deliveryTime: '10-15 mins',
+                      category: 'Food & Snacks'
+                    });
+                  }
+                }
+              } catch (err) {
+                console.log(`🟣 Error parsing product ${index}: ${err.message}`);
+              }
+            });
+          }
+        }
+        
+        // Also check for structured data in scripts
+        const scripts = document.querySelectorAll('script');
+        for (const script of scripts) {
+          if (script.textContent && script.textContent.includes('"products"') && script.textContent.includes(searchQuery)) {
+            console.log('🟣 Found structured product data in script tag');
+            try {
+              // Try to extract JSON data if it exists
+              const jsonMatch = script.textContent.match(/\{[^{}]*"products"[^{}]*\}/);
+              if (jsonMatch) {
+                const data = JSON.parse(jsonMatch[0]);
+                // Parse structured data if available
+              }
+            } catch (e) {
+              // Continue if JSON parsing fails
+            }
+          }
+        }
+        
+        console.log(`🟣 HTML extraction found ${results.length} products`);
+        return results;
+      }, query);
+      
+      return products;
+    } catch (error) {
+      console.log(`🟣 Immediate extraction failed: ${error.message}`);
+      return [];
+    }
   }
 
   filterByRelevancy(products, query) {
