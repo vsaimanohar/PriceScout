@@ -14,7 +14,7 @@ class ApiException implements Exception {
 }
 
 class ApiService {
-  static const String baseUrl = 'https://qecpricetracker-1.onrender.com/api';
+  static const String baseUrl = 'https://qecpricetracker-production.up.railway.app/api';
   static const Duration timeoutDuration = Duration(seconds: 300); // 3 minutes for scraping
   
   Future<List<Product>> searchProducts(String query) async {
