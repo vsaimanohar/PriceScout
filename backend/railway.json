@@ -1,13 +1,11 @@
 {
     "build": {
         "builder": "DOCKERFILE",
-        "dockerfilePath": "Dockerfile",
+        "dockerfilePath": "./backend/Dockerfile",
         "watchPatterns": [
             "package.json",
-            "package-lock.json",
-            "src/**",
             "server.js",
-            "railway.json",
+            "src/**",
             "Dockerfile"
         ]
     },
