@@ -3,10 +3,10 @@
         "builder": "DOCKERFILE",
         "dockerfilePath": "./backend/Dockerfile",
         "watchPatterns": [
-            "package.json",
-            "server.js",
-            "src/**",
-            "Dockerfile"
+            "./backend/package.json",
+            "./backend/server.js",
+            "./backend/src/**",
+            "./backend/Dockerfile"
         ]
     },
     "deploy": {
