@@ -6,16 +6,16 @@ class RealZeptoScraper {
   constructor() {
     this.baseUrl = 'https://www.zeptonow.com';
     this.searchUrl = 'https://www.zeptonow.com/search';
-    
+
     // Production-ready configuration
     this.isProduction = process.env.NODE_ENV === 'production';
     this.enableDebug = process.env.ENABLE_DEBUG === 'true' || !this.isProduction;
-    
+
     if (!this.enableDebug) {
       console.log('🟣 Zepto: Debug logging disabled (production mode)');
     }
   }
-  
+
   log(message) {
     if (this.enableDebug) {
       console.log(message);
@@ -26,55 +26,55 @@ class RealZeptoScraper {
     let page;
     let retryCount = 0;
     const maxRetries = 2;
-    
+
     while (retryCount <= maxRetries) {
       try {
         console.log(`🟣 Zepto: Real scraping for "${query}" (attempt ${retryCount + 1}/${maxRetries + 1})`);
-        
+
         // Use warm browser from pool
         page = await browserPool.getPage('zepto');
-        
+
         // Set longer timeout for complex extraction
         page.setDefaultTimeout(60000);
-        
+
         // Set location to Chennai
         await page.setGeolocation({ latitude: 13.0827, longitude: 80.2707 });
         console.log(`🟣 Zepto: Location set to Chennai`);
-        
+
         const context = page.browser().defaultBrowserContext();
         await context.overridePermissions('https://www.zeptonow.com', ['geolocation']);
-        
+
         console.log(`🟣 Zepto: Navigating to search page...`);
-        
+
         try {
           const searchUrl = `https://www.zeptonow.com/search?query=${query.replace(/\s+/g, '+')}`;
           console.log(`🟣 Zepto: Loading search URL: ${searchUrl}`);
-          
+
           await page.goto(searchUrl, { 
             waitUntil: ['domcontentloaded'],
             timeout: 15000 
           });
         } catch (error) {
           console.log(`🟣 Zepto: Direct search failed, trying main page navigation...`);
-          
+
           await page.goto(this.baseUrl, { 
             waitUntil: ['domcontentloaded'],
             timeout: 15000 
           });
           await page.waitForTimeout(3000);
-          
+
           const searchUrl = `${this.searchUrl}?query=${encodeURIComponent(query)}`;
           await page.goto(searchUrl, { 
             waitUntil: ['domcontentloaded'],
             timeout: 20000 
           });
         }
-        
+
         console.log(`🟣 Zepto: Page loaded, checking for immediate data...`);
-        
+
         // First try: Check if data is already in HTML (faster)
         let fastProducts = await this.tryImmediateExtraction(page, query);
-        
+
         if (!fastProducts || fastProducts.length === 0) {
           console.log(`🟣 Zepto: No immediate data found, waiting for React content...`);
           // Enhanced waiting strategy for React components
@@ -84,14 +84,14 @@ class RealZeptoScraper {
           console.log(`🟣 Zepto: ⚡ Found ${fastProducts.length} products in initial HTML! (Fast path)`);
           return this.filterRelevantProducts(fastProducts, query);
         }
-        
+
         // Debug: Check what elements we actually have
         const debugInfo = await page.evaluate(() => {
           const allElements = document.querySelectorAll('*');
           const elementsWithPrice = Array.from(allElements).filter(el => 
             el.textContent && el.textContent.includes('₹')
           );
-          
+
           return {
             totalElements: allElements.length,
             elementsWithPrice: elementsWithPrice.length,
@@ -102,9 +102,9 @@ class RealZeptoScraper {
             }))
           };
         });
-        
+
         console.log(`🟣 Zepto: Debug info:`, debugInfo);
-        
+
         // FIRST: Let's see what we're actually getting from the site
         console.log(`🟣 Zepto: === DEBUGGING RAW SITE CONTENT ===`);
         const rawContent = await page.evaluate(() => {
@@ -120,11 +120,11 @@ class RealZeptoScraper {
               }))
           };
         });
-        
+
         console.log(`🟣 === FULL BODY TEXT (first 2000 chars) ===`);
         console.log(rawContent.fullBodyText);
         console.log(`🟣 === END BODY TEXT ===\n`);
-        
+
         console.log(`🟣 === ELEMENTS WITH PRICES (first 10) ===`);
         rawContent.allElementsWithPrices.forEach((el, i) => {
           console.log(`${i+1}. ${el.tagName}.${el.className}:`);
@@ -134,7 +134,7 @@ class RealZeptoScraper {
         console.log(`🟣 === END ELEMENTS ===\n`);
 
         const products = await this.extractProductsFromPage(page, query, maxResults);
-        
+
         if (products.length > 0) {
           console.log(`🟣 Zepto: Successfully extracted ${products.length} products!`);
           products.forEach((p, i) => {
@@ -142,7 +142,7 @@ class RealZeptoScraper {
           });
         } else {
           console.log(`🟣 Zepto: No products found with extraction`);
-          
+
           if (retryCount < maxRetries) {
             console.log(`🟣 Zepto: No products found, retrying...`);
             await page.close();
@@ -150,10 +150,10 @@ class RealZeptoScraper {
             continue;
           }
         }
-        
-        // Apply relevancy filtering
+
+      // Apply relevancy filtering
         const filteredProducts = this.filterByRelevancy(products, query);
-        
+
         console.log(`🟣 Zepto: Final result: ${filteredProducts.length} products after filtering`);
         
         return filteredProducts.slice(0, 2);
