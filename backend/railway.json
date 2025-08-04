@@ -1,0 +1,17 @@
+{
+    "build": {
+        "builder": "DOCKERFILE",
+        "dockerfilePath": "Dockerfile",
+        "watchPatterns": [
+            "package.json",
+            "package-lock.json",
+            "src/**",
+            "server.js",
+            "railway.json",
+            "Dockerfile"
+        ]
+    },
+    "deploy": {
+        "startCommand": "npm start"
+    }
+}
