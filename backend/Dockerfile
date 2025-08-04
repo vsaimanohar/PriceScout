@@ -31,14 +31,14 @@ ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 # Set working directory
 WORKDIR /app
 
-# Copy package files  
-COPY package*.json ./
+# Copy package files from backend directory 
+COPY backend/package*.json ./
 
 # Install dependencies fresh in container
 RUN npm install
 
-# Copy app files (excluding node_modules and database)
-COPY . ./
+# Copy backend app files (excluding node_modules and database)
+COPY backend/ ./
 RUN rm -rf node_modules database.db
 
 # Fresh install and rebuild for Linux architecture
