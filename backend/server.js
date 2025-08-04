@@ -10,6 +10,8 @@ const scrapeRoutes = require('./src/routes/scrape');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Railway deployment test
+
 // Middleware
 app.use(cors());
 app.use(express.json());
@@ -65,3 +67,4 @@ async function startServer() {
 startServer();
 
 module.exports = app;
+

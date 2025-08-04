@@ -1,13 +1,7 @@
 {
     "build": {
         "builder": "DOCKERFILE",
-        "dockerfilePath": "./backend/Dockerfile",
-        "watchPatterns": [
-            "./backend/package.json",
-            "./backend/server.js",
-            "./backend/src/**",
-            "./backend/Dockerfile"
-        ]
+        "dockerfilePath": "./backend/Dockerfile"
     },
     "deploy": {
         "startCommand": "npm start"
