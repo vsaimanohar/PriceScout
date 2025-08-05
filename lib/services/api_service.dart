@@ -88,34 +88,40 @@ class ApiService {
     }
   }
   
+  // COMMENTED OUT: Auto-suggestions disabled to prevent excessive API calls
+  // Future<List<String>> getSuggestions(String query) async {
+  //   if (query.trim().isEmpty) return [];
+  //   
+  //   try {
+  //     final response = await http.get(
+  //       Uri.parse('$baseUrl/products/suggestions?q=${Uri.encodeComponent(query)}'),
+  //       headers: {
+  //         'Content-Type': 'application/json',
+  //         'Accept': 'application/json',
+  //       },
+  //     ).timeout(timeoutDuration);
+  //     
+  //     if (response.statusCode == 200) {
+  //       final List<dynamic> data = json.decode(response.body);
+  //       return data.cast<String>();
+  //     } else if (response.statusCode == 404) {
+  //       return [];
+  //     } else {
+  //       print('Suggestions request failed: ${response.statusCode}');
+  //       return [];
+  //     }
+  //   } on TimeoutException {
+  //     print('Suggestions request timed out');
+  //     return [];
+  //   } catch (e) {
+  //     print('Error getting suggestions: $e');
+  //     return [];
+  //   }
+  // }
+  
+  // Temporary replacement that returns empty suggestions
   Future<List<String>> getSuggestions(String query) async {
-    if (query.trim().isEmpty) return [];
-    
-    try {
-      final response = await http.get(
-        Uri.parse('$baseUrl/products/suggestions?q=${Uri.encodeComponent(query)}'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-      ).timeout(timeoutDuration);
-      
-      if (response.statusCode == 200) {
-        final List<dynamic> data = json.decode(response.body);
-        return data.cast<String>();
-      } else if (response.statusCode == 404) {
-        return [];
-      } else {
-        print('Suggestions request failed: ${response.statusCode}');
-        return [];
-      }
-    } on TimeoutException {
-      print('Suggestions request timed out');
-      return [];
-    } catch (e) {
-      print('Error getting suggestions: $e');
-      return [];
-    }
+    return []; // Always return empty to disable auto-suggestions
   }
   
   Future<List<Price>> getProductPrices(int productId) async {
