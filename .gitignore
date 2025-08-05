@@ -43,3 +43,32 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Environment files - NEVER commit these!
+.env
+backend/.env
+*.env
+.env.*
+
+# Database files - don't commit with data
+backend/database.db
+database.db
+
+# Node modules
+node_modules/
+backend/node_modules/
+
+# Logs and debug files
+*.log
+backend/server.log
+backend/*.png
+backend/*.html
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db

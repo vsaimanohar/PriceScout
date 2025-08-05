@@ -14,7 +14,11 @@ class ApiException implements Exception {
 }
 
 class ApiService {
-  static const String baseUrl = 'https://qecpricetracker-production.up.railway.app/api';
+  // Get base URL from environment variables or use localhost as fallback
+  static const String baseUrl = String.fromEnvironment(
+    'API_BASE_URL',
+    defaultValue: 'http://localhost:3000/api', // Development fallback
+  );
   static const Duration timeoutDuration = Duration(seconds: 300); // 3 minutes for scraping
   
   Future<List<Product>> searchProducts(String query) async {
